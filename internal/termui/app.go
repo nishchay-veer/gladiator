@@ -6,9 +6,9 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"gladiator/internal/config"
-	"gladiator/internal/game"
-	"gladiator/internal/netplay"
+	"github.com/nishchay-veer/gladiator/internal/config"
+	"github.com/nishchay-veer/gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/netplay"
 )
 
 type PlayLocalOptions struct {

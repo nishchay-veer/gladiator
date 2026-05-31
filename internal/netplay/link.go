@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"gladiator/internal/protocol"
+	"github.com/nishchay-veer/gladiator/internal/protocol"
 )
 
 type LinkSimulation struct {

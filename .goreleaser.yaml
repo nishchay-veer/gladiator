@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: gladiator
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: gladiator
+    main: ./cmd/gladiator
+    binary: gladiator
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X github.com/nishchay-veer/gladiator/internal/build.Version={{ .Version }}
+
+archives:
+  - id: gladiator
+    ids:
+      - gladiator
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - docs/lan-test-checklist.md
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gladiator/internal/netplay"
+	"github.com/nishchay-veer/gladiator/internal/netplay"
 )
 
 func TestNetDebugSourceSnapshot(t *testing.T) {

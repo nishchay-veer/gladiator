@@ -3,7 +3,7 @@ package termui
 import (
 	"math"
 
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 const correctionFrames = 4

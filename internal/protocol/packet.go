@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 const (

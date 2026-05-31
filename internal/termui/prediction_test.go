@@ -3,8 +3,8 @@ package termui
 import (
 	"testing"
 
-	"gladiator/internal/config"
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/config"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 func TestApplyPredictedCommandRecordsHistory(t *testing.T) {

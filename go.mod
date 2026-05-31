@@ -1,4 +1,4 @@
-module gladiator
+module github.com/nishchay-veer/gladiator
 
 go 1.24.2
 

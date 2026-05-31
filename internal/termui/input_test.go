@@ -3,9 +3,9 @@ package termui
 import (
 	"testing"
 
-	"gladiator/internal/config"
-	"gladiator/internal/game"
-	"gladiator/internal/netplay"
+	"github.com/nishchay-veer/gladiator/internal/config"
+	"github.com/nishchay-veer/gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/netplay"
 )
 
 func TestActionForRune(t *testing.T) {

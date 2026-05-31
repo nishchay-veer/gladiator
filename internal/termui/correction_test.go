@@ -3,7 +3,7 @@ package termui
 import (
 	"testing"
 
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 func TestCorrectionAnimationInterpolatesAndCompletes(t *testing.T) {

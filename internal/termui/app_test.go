@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"gladiator/internal/config"
+	"github.com/nishchay-veer/gladiator/internal/config"
 )
 
 func TestRenderRateUsesConfiguredRate(t *testing.T) {

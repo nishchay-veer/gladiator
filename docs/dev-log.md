@@ -243,3 +243,23 @@
 - Host terminal mode now hides P2 while waiting for a joiner.
 - P2 becomes visible when the peer status changes to connected and hides again on disconnect or timeout.
 - Local play and join mode still render P2 immediately.
+
+### Release Packaging Start
+
+- Started the packaging/release slice so Gladiator can move from `go run` to downloaded binaries.
+- Added local build targets for normal builds and cross-platform snapshot builds.
+- Made the build version injectable at link time so release binaries can report their tag.
+- Added GoReleaser config for macOS, Linux, and Windows release archives.
+- Added a GitHub Actions release workflow that runs tests and publishes artifacts on `v*` tags.
+- Documented the GitHub-only install story: users download release archives or install from source with Go.
+
+### GitHub-Only Release Path
+
+- Removed Homebrew tap/cask publishing from the release plan.
+- Changed the Go module path to `github.com/nishchay-veer/gladiator` so the GitHub repo can support `go install github.com/nishchay-veer/gladiator/cmd/gladiator@latest`.
+- Kept GoReleaser focused on GitHub release archives and checksums.
+
+### First Release Version
+
+- Set the first release target to `v1.0.0`.
+- Updated the fallback app version to `1.0.0` so direct source installs and non-GoReleaser builds report the same public version.

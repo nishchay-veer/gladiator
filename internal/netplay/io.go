@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"gladiator/internal/protocol"
+	"github.com/nishchay-veer/gladiator/internal/protocol"
 )
 
 const readPollInterval = 20 * time.Millisecond

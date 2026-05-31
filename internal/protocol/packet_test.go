@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 func TestInputPacketRoundTrip(t *testing.T) {
@@ -113,11 +113,11 @@ func TestSmallPayloadPacketRoundTrips(t *testing.T) {
 				Sequence:  1,
 				Payload: HelloPayload{
 					PlayerName:   "nish",
-					BuildVersion: "0.3.0-dev",
+					BuildVersion: "1.0.0",
 					Ready:        true,
 				},
 			},
-			payload: HelloPayload{PlayerName: "nish", BuildVersion: "0.3.0-dev", Ready: true},
+			payload: HelloPayload{PlayerName: "nish", BuildVersion: "1.0.0", Ready: true},
 		},
 		{
 			name: "ping",

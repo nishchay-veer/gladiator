@@ -11,9 +11,38 @@ The current build supports:
 
 ## Requirements
 
-- Go `1.24.2` or compatible local toolchain
 - A terminal that supports tcell alternate-screen rendering
 - Two terminals or two machines on the same LAN for netplay
+- Go `1.24.2` or compatible local toolchain only if building from source
+
+## Install
+
+Download a release archive for your OS from:
+
+```text
+https://github.com/nishchay-veer/gladiator/releases
+```
+
+Unpack it, put `gladiator` somewhere on your `PATH`, then run:
+
+```sh
+gladiator version
+```
+
+From source with Go:
+
+```sh
+go install github.com/nishchay-veer/gladiator/cmd/gladiator@latest
+gladiator version
+```
+
+From a local clone:
+
+```sh
+go run ./cmd/gladiator version
+```
+
+See `docs/release.md` for the release checklist.
 
 ## Run
 

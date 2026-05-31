@@ -6,7 +6,7 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 func (a *localApp) draw() {

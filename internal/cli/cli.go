@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"gladiator/internal/build"
-	"gladiator/internal/config"
-	"gladiator/internal/netplay"
-	"gladiator/internal/termui"
+	"github.com/nishchay-veer/gladiator/internal/build"
+	"github.com/nishchay-veer/gladiator/internal/config"
+	"github.com/nishchay-veer/gladiator/internal/netplay"
+	"github.com/nishchay-veer/gladiator/internal/termui"
 )
 
 const joinTimeout = 5 * time.Second

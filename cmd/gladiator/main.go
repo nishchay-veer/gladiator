@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"gladiator/internal/cli"
+	"github.com/nishchay-veer/gladiator/internal/cli"
 )
 
 func main() {

@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"gladiator/internal/game"
-	"gladiator/internal/protocol"
+	"github.com/nishchay-veer/gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/protocol"
 )
 
 type HostOptions struct {

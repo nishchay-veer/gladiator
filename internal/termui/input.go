@@ -3,8 +3,8 @@ package termui
 import (
 	"github.com/gdamore/tcell/v2"
 
-	"gladiator/internal/config"
-	"gladiator/internal/game"
+	"github.com/nishchay-veer/gladiator/internal/config"
+	"github.com/nishchay-veer/gladiator/internal/game"
 )
 
 type inputAction int

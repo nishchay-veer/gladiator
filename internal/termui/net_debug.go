@@ -3,7 +3,7 @@ package termui
 import (
 	"fmt"
 
-	"gladiator/internal/netplay"
+	"github.com/nishchay-veer/gladiator/internal/netplay"
 )
 
 type netDebugSource struct {

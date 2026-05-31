@@ -1,3 +1,3 @@
 package build
 
-const Version = "0.3.0-dev"
+var Version = "1.0.0"

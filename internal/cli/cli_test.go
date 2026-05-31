@@ -30,7 +30,7 @@ func TestRunVersion(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("Run(version) code = %d, want 0", code)
 	}
-	if !strings.Contains(stdout.String(), "0.3.0-dev") {
+	if !strings.Contains(stdout.String(), "1.0.0") {
 		t.Fatalf("version output = %q", stdout.String())
 	}
 	if stderr.Len() != 0 {
