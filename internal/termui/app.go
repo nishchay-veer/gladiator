@@ -54,12 +54,13 @@ func PlayLocal(ctx context.Context, opts PlayLocalOptions) error {
 	screen.HideCursor()
 
 	app := localApp{
-		screen:  screen,
-		cfg:     cfg,
-		state:   state,
-		events:  make(chan tcell.Event, 32),
-		player:  game.PlayerOne,
-		pending: game.NewInputCommand(state.Tick, game.PlayerOne),
+		screen:      screen,
+		cfg:         cfg,
+		state:       state,
+		events:      make(chan tcell.Event, 32),
+		player:      game.PlayerOne,
+		pending:     game.NewInputCommand(state.Tick, game.PlayerOne),
+		showPlayer2: true,
 	}
 
 	go app.pollEvents()
@@ -106,13 +107,14 @@ func PlayHost(ctx context.Context, opts PlayHostOptions) error {
 	})
 
 	app := localApp{
-		screen:  screen,
-		cfg:     cfg,
-		state:   state,
-		events:  make(chan tcell.Event, 32),
-		player:  game.PlayerOne,
-		status:  peerStatusText(netplay.PeerStatus{}),
-		pending: game.NewInputCommand(state.Tick, game.PlayerOne),
+		screen:      screen,
+		cfg:         cfg,
+		state:       state,
+		events:      make(chan tcell.Event, 32),
+		player:      game.PlayerOne,
+		status:      peerStatusText(netplay.PeerStatus{}),
+		pending:     game.NewInputCommand(state.Tick, game.PlayerOne),
+		showPlayer2: false,
 	}
 
 	go app.pollEvents()
@@ -174,13 +176,15 @@ func PlayJoin(ctx context.Context, opts PlayJoinOptions) error {
 	})
 
 	app := localApp{
-		screen:  screen,
-		cfg:     cfg,
-		state:   state,
-		events:  make(chan tcell.Event, 32),
-		player:  welcome.PlayerID,
-		status:  "LAN P2",
-		pending: game.NewInputCommand(state.Tick, welcome.PlayerID),
+		screen:      screen,
+		cfg:         cfg,
+		state:       state,
+		events:      make(chan tcell.Event, 32),
+		player:      welcome.PlayerID,
+		status:      "LAN P2",
+		pending:     game.NewInputCommand(state.Tick, welcome.PlayerID),
+		prediction:  game.NewPredictionHistory(0),
+		showPlayer2: true,
 	}
 
 	go app.pollEvents()
@@ -200,8 +204,11 @@ type localApp struct {
 	player       game.PlayerID
 	status       string
 	pending      game.InputCommand
+	showPlayer2  bool
 	showNetDebug bool
 	netDebug     netDebugStats
+	prediction   *game.PredictionHistory
+	correction   correctionAnimation
 
 	fpsWindow time.Time
 	frames    int
@@ -262,8 +269,11 @@ func (a *localApp) runClient(ctx context.Context, session netplay.ClientSession)
 }
 
 func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputCommand, snapshots <-chan game.Snapshot, peerStatus <-chan netplay.PeerStatus, errors <-chan error, debugSource netDebugSource) error {
-	ticker := time.NewTicker(a.cfg.SimulationRate)
-	defer ticker.Stop()
+	inputTicker := time.NewTicker(a.cfg.SimulationRate)
+	defer inputTicker.Stop()
+
+	renderTicker := time.NewTicker(renderRate(a.cfg))
+	defer renderTicker.Stop()
 
 	a.updateNetDebug(debugSource)
 	a.draw()
@@ -275,16 +285,14 @@ func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputComma
 		case err := <-errors:
 			return err
 		case snapshot := <-snapshots:
-			a.state = applySnapshot(a.state, snapshot)
+			a.applyAuthoritativeSnapshot(snapshot)
 			a.updateNetDebug(debugSource)
-			a.draw()
 		case status, ok := <-peerStatus:
 			if !ok {
 				peerStatus = nil
 				continue
 			}
-			a.status = peerStatusText(status)
-			a.draw()
+			a.applyPeerStatus(status)
 		case event, ok := <-a.events:
 			if !ok {
 				return nil
@@ -293,19 +301,65 @@ func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputComma
 				return nil
 			}
 			a.updateNetDebug(debugSource)
-			a.draw()
-		case <-ticker.C:
-			a.sendPendingCommand(inputs)
-			if a.showNetDebug {
-				a.updateNetDebug(debugSource)
-				a.draw()
+		case <-inputTicker.C:
+			command, sent := a.sendPendingCommand(inputs)
+			if sent {
+				a.applyPredictedCommand(command)
 			}
+			a.correction.Advance()
+			a.updateNetDebug(debugSource)
+		case <-renderTicker.C:
+			a.updateNetDebug(debugSource)
+			a.draw()
 		}
 	}
 }
 
+func renderRate(cfg config.Config) time.Duration {
+	if cfg.RenderRate > 0 {
+		return cfg.RenderRate
+	}
+	if cfg.SimulationRate > 0 {
+		return cfg.SimulationRate
+	}
+	return config.Default().RenderRate
+}
+
 func (a *localApp) updateNetDebug(source netDebugSource) {
 	a.netDebug = source.snapshot()
+}
+
+func (a *localApp) applyPeerStatus(status netplay.PeerStatus) {
+	a.status = peerStatusText(status)
+	a.showPlayer2 = status.Connected
+}
+
+func (a *localApp) applyAuthoritativeSnapshot(snapshot game.Snapshot) {
+	if a.prediction == nil {
+		a.state = applySnapshot(a.state, snapshot)
+		return
+	}
+
+	before := a.inputPlayer().Position
+	result := a.prediction.Reconcile(a.state, snapshot, a.player)
+	a.state = result.State
+	after := a.inputPlayer().Position
+	if result.NeedsCorrection {
+		a.correction = newCorrectionAnimation(a.player, before, after)
+	}
+}
+
+func (a *localApp) applyPredictedCommand(command game.InputCommand) {
+	if a.prediction == nil || command.PlayerID != a.player {
+		return
+	}
+
+	command.Tick = a.state.Tick
+	frame := game.NewInputFrame(a.state.Tick)
+	frame.Set(command)
+	a.state.Step(frame)
+	a.prediction.Record(command, a.state.Snapshot())
+	a.correction.Retarget(a.inputPlayer().Position)
 }
 
 func peerStatusText(status netplay.PeerStatus) string {

@@ -70,13 +70,13 @@ func (a *localApp) drawArena(originX, originY int) {
 
 func (a *localApp) drawPlayerAt(p game.Point, x, y int, styles renderStyles) bool {
 	p1 := a.state.Players[0]
-	if p1.Alive() && p1.Position == p {
+	if p1.Alive() && a.correction.PositionFor(p1) == p {
 		drawTile(a.screen, x, y, styles.player1, playerRune(p1.Facing), ' ')
 		return true
 	}
 
 	p2 := a.state.Players[1]
-	if p2.Alive() && p2.Position == p {
+	if a.showPlayer2 && p2.Alive() && a.correction.PositionFor(p2) == p {
 		drawTile(a.screen, x, y, styles.player2, playerRune(p2.Facing), ' ')
 		return true
 	}
@@ -112,9 +112,15 @@ func (a *localApp) drawHUD(x, y int) {
 	styles := hudStyles()
 	p1 := a.state.Players[0]
 	p2 := a.state.Players[1]
+	p2Status := "WAIT"
+	p2Score := 0
+	if a.showPlayer2 {
+		p2Status = playerStatus(p2, a.cfg.SimulationRate)
+		p2Score = p2.Score
+	}
 	line := fmt.Sprintf(" P1 %s  CD %s  S%d | P2 %s  S%d | FPS %03d ",
 		playerStatus(p1, a.cfg.SimulationRate), cooldownText(p1), p1.Score,
-		playerStatus(p2, a.cfg.SimulationRate), p2.Score, a.fps)
+		p2Status, p2Score, a.fps)
 	if a.status != "" {
 		line += "| " + a.status + " "
 	}

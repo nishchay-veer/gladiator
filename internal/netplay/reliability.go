@@ -5,6 +5,7 @@ type NetworkStats struct {
 	PacketsDropped       uint64
 	DuplicatePackets     uint64
 	StalePackets         uint64
+	InvalidPackets       uint64
 	ReorderedPackets     uint64
 	EstimatedLostPackets uint64
 	LatestSequence       uint32
@@ -75,6 +76,12 @@ func (w *packetWindow) Observe(sequence uint32) packetObservation {
 		w.stats.EstimatedLostPackets--
 	}
 	return packetObservation{Accepted: true, Reordered: true}
+}
+
+func (w *packetWindow) RejectInvalid() {
+	w.stats.PacketsReceived++
+	w.stats.PacketsDropped++
+	w.stats.InvalidPackets++
 }
 
 func (w packetWindow) Ack() (uint32, uint32) {

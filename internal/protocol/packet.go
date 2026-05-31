@@ -185,6 +185,9 @@ func (p Packet) validate() error {
 		if payload.Command.Tick != p.Tick {
 			return fmt.Errorf("input command tick %d does not match packet tick %d", payload.Command.Tick, p.Tick)
 		}
+		if payload.Command.Sequence != p.Sequence {
+			return fmt.Errorf("input command sequence %d does not match packet sequence %d", payload.Command.Sequence, p.Sequence)
+		}
 		if err := payload.Command.Validate(p.Tick); err != nil {
 			return err
 		}

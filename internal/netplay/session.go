@@ -259,8 +259,12 @@ func (h *Host) queueRemoteInput(addr *net.UDPAddr, packet protocol.Packet, remot
 	knownRemote := packet.SessionID == h.sessionID && sameUDPAddr(h.remote, addr) && payload.Command.PlayerID == game.PlayerTwo
 	var observation packetObservation
 	if knownRemote {
-		observation = h.remotePackets.Observe(packet.Sequence)
-		h.remoteLastSeen = time.Now()
+		if h.validateRemoteInputLocked(packet, payload.Command) {
+			observation = h.remotePackets.Observe(packet.Sequence)
+			h.remoteLastSeen = time.Now()
+		} else {
+			h.remotePackets.RejectInvalid()
+		}
 	}
 	h.mu.Unlock()
 

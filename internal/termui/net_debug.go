@@ -35,9 +35,10 @@ func netDebugLine(stats netDebugStats) string {
 		return ""
 	}
 
-	return fmt.Sprintf(" NET rx %d d%d dup%d old%d loss~%d | tx %d/%d simd%d delay%d ",
+	return fmt.Sprintf(" NET rx %d d%d bad%d dup%d old%d loss~%d | tx %d/%d simd%d delay%d ",
 		stats.Network.PacketsReceived,
 		stats.Network.PacketsDropped,
+		stats.Network.InvalidPackets,
 		stats.Network.DuplicatePackets,
 		stats.Network.StalePackets,
 		stats.Network.EstimatedLostPackets,

@@ -215,6 +215,19 @@ func TestEncodeRejectsInvalidPacket(t *testing.T) {
 			},
 		},
 		{
+			name: "input sequence mismatch",
+			packet: Packet{
+				Type:     PacketInput,
+				Sequence: 10,
+				Tick:     10,
+				Payload: InputPayload{Command: game.InputCommand{
+					Tick:     10,
+					PlayerID: game.PlayerOne,
+					Sequence: 11,
+				}},
+			},
+		},
+		{
 			name: "oversized string",
 			packet: Packet{
 				Type: PacketHello,

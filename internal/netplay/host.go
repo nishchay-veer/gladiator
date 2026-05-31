@@ -185,6 +185,11 @@ func (h *Host) handleInput(addr *net.UDPAddr, packet protocol.Packet) error {
 		h.mu.Unlock()
 		return nil
 	}
+	if !h.validateRemoteInputLocked(packet, payload.Command) {
+		h.remotePackets.RejectInvalid()
+		h.mu.Unlock()
+		return nil
+	}
 
 	observation := h.remotePackets.Observe(packet.Sequence)
 	if !observation.Advanced {

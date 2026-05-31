@@ -67,3 +67,17 @@ func TestPeerStatusText(t *testing.T) {
 		t.Fatalf("peerStatusText(timeout) = %q, want P2 LOST", got)
 	}
 }
+
+func TestPeerStatusControlsPlayerTwoVisibility(t *testing.T) {
+	app := localApp{showPlayer2: false}
+
+	app.applyPeerStatus(netplay.PeerStatus{Connected: true})
+	if !app.showPlayer2 {
+		t.Fatal("show player two = false, want true after connect")
+	}
+
+	app.applyPeerStatus(netplay.PeerStatus{Reason: "disconnect"})
+	if app.showPlayer2 {
+		t.Fatal("show player two = true, want false after disconnect")
+	}
+}

@@ -45,6 +45,7 @@ func TestNetDebugLine(t *testing.T) {
 			PacketsDropped:       3,
 			DuplicatePackets:     1,
 			StalePackets:         2,
+			InvalidPackets:       1,
 			EstimatedLostPackets: 4,
 		},
 		Link: netplay.LinkStats{
@@ -55,7 +56,7 @@ func TestNetDebugLine(t *testing.T) {
 		},
 	})
 
-	for _, want := range []string{"rx 12", "d3", "dup1", "old2", "loss~4", "tx 8/11", "simd3", "delay5"} {
+	for _, want := range []string{"rx 12", "d3", "bad1", "dup1", "old2", "loss~4", "tx 8/11", "simd3", "delay5"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("netDebugLine() = %q, want to contain %q", line, want)
 		}

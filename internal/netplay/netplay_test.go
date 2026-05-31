@@ -136,10 +136,7 @@ func TestLoopbackPacketStatsTrackPeerSequences(t *testing.T) {
 
 func TestHostQueueRemoteInputDropsDuplicateSequences(t *testing.T) {
 	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9000}
-	host := &Host{
-		sessionID: 99,
-		remote:    remote,
-	}
+	host := newValidationHost(t, remote, 0)
 	remoteInputs := make(chan game.InputCommand, 2)
 
 	command := game.NewInputCommand(0, game.PlayerTwo)
@@ -161,6 +158,111 @@ func TestHostQueueRemoteInputDropsDuplicateSequences(t *testing.T) {
 	stats := host.Stats()
 	if stats.DuplicatePackets != 1 || stats.PacketsDropped != 1 {
 		t.Fatalf("host stats = %#v, want one duplicate drop", stats)
+	}
+}
+
+func TestHostQueueRemoteInputRejectsInvalidCommands(t *testing.T) {
+	tests := []struct {
+		name        string
+		currentTick uint64
+		mutate      func(*protocol.Packet, *game.InputCommand)
+	}{
+		{
+			name: "axis out of range",
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				command.MoveX = 2
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+		{
+			name: "diagonal movement",
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				command.MoveX = 1
+				command.MoveY = 1
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+		{
+			name: "unknown button",
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				command.Buttons = game.Buttons(1 << 7)
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+		{
+			name: "sequence mismatch",
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				command.Sequence = packet.Sequence + 1
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+		{
+			name: "tick mismatch",
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				command.Tick = packet.Tick + 1
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+		{
+			name:        "too stale",
+			currentTick: maxRemoteInputLagTicks + 1,
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				packet.Tick = 0
+				command.Tick = 0
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+		{
+			name: "too far ahead",
+			mutate: func(packet *protocol.Packet, command *game.InputCommand) {
+				packet.Tick = maxRemoteInputLeadTicks + 1
+				command.Tick = packet.Tick
+				packet.Payload = protocol.InputPayload{Command: *command}
+			},
+		},
+	}
+
+	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9000}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host := newValidationHost(t, remote, tt.currentTick)
+			remoteInputs := make(chan game.InputCommand, 1)
+			packet, command := remoteInputPacket(tt.currentTick, 1)
+			tt.mutate(&packet, &command)
+
+			host.queueRemoteInput(remote, packet, remoteInputs)
+
+			if got := len(remoteInputs); got != 0 {
+				t.Fatalf("queued inputs = %d, want 0", got)
+			}
+			stats := host.Stats()
+			if stats.InvalidPackets != 1 {
+				t.Fatalf("invalid packets = %d, want 1", stats.InvalidPackets)
+			}
+			if stats.PacketsDropped != 1 {
+				t.Fatalf("dropped packets = %d, want 1", stats.PacketsDropped)
+			}
+		})
+	}
+}
+
+func TestHostQueueRemoteInputAcceptsTickWindowEdges(t *testing.T) {
+	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9000}
+	currentTick := uint64(100)
+	host := newValidationHost(t, remote, currentTick)
+	remoteInputs := make(chan game.InputCommand, 2)
+
+	lagPacket, _ := remoteInputPacket(currentTick-maxRemoteInputLagTicks, 1)
+	host.queueRemoteInput(remote, lagPacket, remoteInputs)
+
+	leadPacket, _ := remoteInputPacket(currentTick+maxRemoteInputLeadTicks, 2)
+	host.queueRemoteInput(remote, leadPacket, remoteInputs)
+
+	if got := len(remoteInputs); got != 2 {
+		t.Fatalf("queued inputs = %d, want 2", got)
+	}
+	if stats := host.Stats(); stats.InvalidPackets != 0 || stats.PacketsDropped != 0 {
+		t.Fatalf("host stats = %#v, want no validation drops", stats)
 	}
 }
 
@@ -541,4 +643,32 @@ func sendSessionInput(t *testing.T, inputs chan<- game.InputCommand, command gam
 	case <-time.After(time.Second):
 		t.Fatal("timed out sending session input")
 	}
+}
+
+func newValidationHost(t *testing.T, remote *net.UDPAddr, tick uint64) *Host {
+	t.Helper()
+
+	state, err := game.NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+	state.Tick = tick
+	return &Host{
+		sessionID: 99,
+		state:     state,
+		remote:    remote,
+	}
+}
+
+func remoteInputPacket(tick uint64, sequence uint32) (protocol.Packet, game.InputCommand) {
+	command := game.NewInputCommand(tick, game.PlayerTwo)
+	command.Sequence = sequence
+	packet := protocol.Packet{
+		Type:      protocol.PacketInput,
+		SessionID: 99,
+		Sequence:  sequence,
+		Tick:      tick,
+		Payload:   protocol.InputPayload{Command: command},
+	}
+	return packet, command
 }

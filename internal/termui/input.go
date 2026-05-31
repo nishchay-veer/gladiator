@@ -61,11 +61,13 @@ func (a *localApp) consumePendingCommand() game.InputCommand {
 	return command
 }
 
-func (a *localApp) sendPendingCommand(inputs chan<- game.InputCommand) {
+func (a *localApp) sendPendingCommand(inputs chan<- game.InputCommand) (game.InputCommand, bool) {
 	command := a.consumePendingCommand()
 	select {
 	case inputs <- command:
+		return command, true
 	default:
+		return command, false
 	}
 }
 

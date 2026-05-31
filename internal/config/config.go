@@ -7,6 +7,7 @@ type Config struct {
 	NetworkPort      int
 	SimulationRate   time.Duration
 	SnapshotRate     time.Duration
+	RenderRate       time.Duration
 	MinimumTermWidth int
 	MinimumTermRows  int
 	Controls         Controls
@@ -27,6 +28,7 @@ func Default() Config {
 		NetworkPort:      42424,
 		SimulationRate:   time.Second / 60,
 		SnapshotRate:     time.Second / 30,
+		RenderRate:       time.Second / 60,
 		MinimumTermWidth: 80,
 		MinimumTermRows:  24,
 		Controls: Controls{

@@ -201,3 +201,45 @@
 - The debug line shows received packets, dropped/duplicate/stale counts, estimated loss, sent/queued packets, simulated drops, and delayed packets.
 - Kept the overlay out of the default view so normal local and LAN play stays visually clean.
 - Added focused tests for the debug snapshot, formatting, and key mapping.
+
+### Client Prediction Start
+
+- Added a reusable prediction history that records local input commands and predicted snapshots by tick.
+- Added reconciliation support that applies an authoritative snapshot, detects local-player prediction mismatch, and replays saved local commands up to the latest predicted tick.
+- Moved snapshot-to-state application into the game package so prediction, terminal rendering, and future clients can share the same conversion path.
+- Wired join mode to predict P2 locally after sent inputs, then reconcile when host snapshots arrive.
+- Added tests for history pruning, replay reconciliation, correction detection, remote-only mismatch handling, and join-mode prediction plumbing.
+
+### Prediction Correction Smoothing
+
+- Added a render-only correction animation for predicted local-player mismatches.
+- Join mode now keeps authoritative state immediately, but draws the corrected local player across a short interpolation window instead of popping instantly.
+- Correction animation can retarget if the local player keeps moving while an older correction is still visible.
+- Added focused tests for interpolation, completion, retargeting, and starting a correction after authoritative reconciliation.
+
+### Server Input Validation
+
+- Added a host-side validation gate for remote input before it can enter the authoritative simulation.
+- Remote input packets now must have matching packet/command tick and sequence values, belong to P2, pass command validation, and fall inside a bounded lead/lag tick window.
+- Invalid remote inputs are dropped without advancing the receive ack window, so a bad high-sequence packet cannot poison later valid input.
+- The network debug line now includes `bad` packet count for rejected inputs.
+- Added tests for invalid movement axes, diagonal movement, unknown button bits, sequence/tick mismatches, stale/future input windows, and protocol sequence mismatch rejection.
+
+### Network Render Cadence
+
+- Added a dedicated render rate to config, defaulting to 60 FPS.
+- Network host/join sessions now use separate tickers for input submission and terminal rendering, so the HUD FPS reflects capped redraws instead of a mix of snapshot, prediction, and event redraws.
+- Host and joiner should now report similar terminal FPS while simulation and snapshot networking keep their existing 60 Hz and 30 Hz cadences.
+- Added render-rate fallback tests.
+
+### Phase 4 Complete
+
+- Marked the netcode hardening phase complete for the current project scope.
+- Closed with ack/sequence tracking, duplicate/stale/invalid packet handling, simulated loss/jitter, network debug overlay, client prediction/reconciliation, correction smoothing, server input validation, and consistent network render cadence in place.
+- Remaining networking ideas such as a tiny reliable event lane can move into later UX/packaging work instead of blocking this phase.
+
+### Host Waiting Visibility
+
+- Host terminal mode now hides P2 while waiting for a joiner.
+- P2 becomes visible when the peer status changes to connected and hides again on disconnect or timeout.
+- Local play and join mode still render P2 immediately.
