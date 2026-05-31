@@ -28,6 +28,8 @@ type Client struct {
 	sessionID uint64
 	playerID  game.PlayerID
 	sequence  uint32
+
+	hostPackets packetWindow
 }
 
 type JoinResult struct {
@@ -74,10 +76,20 @@ func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
+func (c *Client) Stats() NetworkStats {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.hostPackets.Stats()
+}
+
 func (c *Client) Join(ctx context.Context) (JoinResult, error) {
+	sequence, ack, ackBits := c.nextPacketHeader()
 	packet := protocol.Packet{
 		Type:     protocol.PacketHello,
-		Sequence: c.nextSequence(),
+		Sequence: sequence,
+		Ack:      ack,
+		AckBits:  ackBits,
 		Payload: protocol.HelloPayload{
 			PlayerName:   c.playerName,
 			BuildVersion: c.buildVersion,
@@ -126,10 +138,13 @@ func (c *Client) SendInput(ctx context.Context, command game.InputCommand) (game
 	}
 	sessionID := c.sessionID
 	command.Sequence = c.nextSequenceLocked()
+	ack, ackBits := c.hostPackets.Ack()
 	packet := protocol.Packet{
 		Type:      protocol.PacketInput,
 		SessionID: sessionID,
 		Sequence:  command.Sequence,
+		Ack:       ack,
+		AckBits:   ackBits,
 		Tick:      command.Tick,
 		Payload:   protocol.InputPayload{Command: command},
 	}
@@ -140,11 +155,11 @@ func (c *Client) SendInput(ctx context.Context, command game.InputCommand) (game
 	}
 
 	for {
-		response, err := c.readFromHost(ctx)
+		response, observation, err := c.readPacketFromHost(ctx)
 		if err != nil {
 			return game.Snapshot{}, err
 		}
-		if response.Type != protocol.PacketSnapshot || response.SessionID != sessionID {
+		if response.Type != protocol.PacketSnapshot || response.SessionID != sessionID || !observation.Advanced {
 			continue
 		}
 
@@ -168,6 +183,7 @@ func (c *Client) Disconnect(ctx context.Context, reason string) error {
 	}
 	sessionID := c.sessionID
 	sequence := c.nextSequenceLocked()
+	ack, ackBits := c.hostPackets.Ack()
 	c.sessionID = 0
 	c.playerID = 0
 	c.mu.Unlock()
@@ -176,21 +192,28 @@ func (c *Client) Disconnect(ctx context.Context, reason string) error {
 		Type:      protocol.PacketDisconnect,
 		SessionID: sessionID,
 		Sequence:  sequence,
+		Ack:       ack,
+		AckBits:   ackBits,
 		Payload:   protocol.DisconnectPayload{Reason: reason},
 	}
 	return sendPacket(c.conn, c.hostAddr, packet)
 }
 
 func (c *Client) readFromHost(ctx context.Context) (protocol.Packet, error) {
+	packet, _, err := c.readPacketFromHost(ctx)
+	return packet, err
+}
+
+func (c *Client) readPacketFromHost(ctx context.Context) (protocol.Packet, packetObservation, error) {
 	buffer := make([]byte, protocol.MaxPacketSize)
 
 	for {
 		data, addr, err := readDatagram(ctx, c.conn, buffer)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, net.ErrClosed) {
-				return protocol.Packet{}, err
+				return protocol.Packet{}, packetObservation{}, err
 			}
-			return protocol.Packet{}, err
+			return protocol.Packet{}, packetObservation{}, err
 		}
 		if !sameUDPAddr(addr, c.hostAddr) {
 			continue
@@ -200,18 +223,25 @@ func (c *Client) readFromHost(ctx context.Context) (protocol.Packet, error) {
 		if err != nil {
 			continue
 		}
-		return packet, nil
+
+		c.mu.Lock()
+		observation := c.hostPackets.Observe(packet.Sequence)
+		c.mu.Unlock()
+
+		return packet, observation, nil
 	}
-}
-
-func (c *Client) nextSequence() uint32 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.nextSequenceLocked()
 }
 
 func (c *Client) nextSequenceLocked() uint32 {
 	c.sequence++
 	return c.sequence
+}
+
+func (c *Client) nextPacketHeader() (uint32, uint32, uint32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	sequence := c.nextSequenceLocked()
+	ack, ackBits := c.hostPackets.Ack()
+	return sequence, ack, ackBits
 }

@@ -15,6 +15,7 @@ import (
 
 	"gladiator/internal/build"
 	"gladiator/internal/config"
+	"gladiator/internal/netplay"
 	"gladiator/internal/termui"
 )
 
@@ -72,9 +73,16 @@ func runHost(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		bindAddr = strings.TrimSpace(args[0])
 	}
 
-	err := termui.PlayHost(ctx, termui.PlayHostOptions{
-		Config: config.Default(),
-		Addr:   bindAddr,
+	linkSimulation, err := linkSimulationFromEnv()
+	if err != nil {
+		fmt.Fprintf(stderr, "host: %v\n", err)
+		return 2
+	}
+
+	err = termui.PlayHost(ctx, termui.PlayHostOptions{
+		Config:         config.Default(),
+		Addr:           bindAddr,
+		LinkSimulation: linkSimulation,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(stderr, "host: %v\n", err)
@@ -95,19 +103,59 @@ func runJoin(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "join: %v\n", err)
 		return 2
 	}
+	linkSimulation, err := linkSimulationFromEnv()
+	if err != nil {
+		fmt.Fprintf(stderr, "join: %v\n", err)
+		return 2
+	}
 
 	err = termui.PlayJoin(ctx, termui.PlayJoinOptions{
-		Config:       config.Default(),
-		HostAddr:     hostAddr,
-		PlayerName:   "P2",
-		BuildVersion: build.Version,
-		JoinTimeout:  joinTimeout,
+		Config:         config.Default(),
+		HostAddr:       hostAddr,
+		PlayerName:     "P2",
+		BuildVersion:   build.Version,
+		JoinTimeout:    joinTimeout,
+		LinkSimulation: linkSimulation,
 	})
 	if err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintf(stderr, "join: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+func linkSimulationFromEnv() (netplay.LinkSimulation, error) {
+	dropEvery, err := nonNegativeEnvInt("GLADIATOR_NET_DROP_EVERY")
+	if err != nil {
+		return netplay.LinkSimulation{}, err
+	}
+	delayMillis, err := nonNegativeEnvInt("GLADIATOR_NET_DELAY_MS")
+	if err != nil {
+		return netplay.LinkSimulation{}, err
+	}
+	jitterMillis, err := nonNegativeEnvInt("GLADIATOR_NET_JITTER_MS")
+	if err != nil {
+		return netplay.LinkSimulation{}, err
+	}
+
+	return netplay.LinkSimulation{
+		DropEvery: dropEvery,
+		BaseDelay: time.Duration(delayMillis) * time.Millisecond,
+		Jitter:    time.Duration(jitterMillis) * time.Millisecond,
+	}, nil
+}
+
+func nonNegativeEnvInt(name string) (int, error) {
+	value := strings.TrimSpace(os.Getenv(name))
+	if value == "" {
+		return 0, nil
+	}
+
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 0 {
+		return 0, fmt.Errorf("%s must be a non-negative integer", name)
+	}
+	return parsed, nil
 }
 
 func joinTargetAddress(target string, defaultPort int) (string, error) {
@@ -144,5 +192,10 @@ Current build:
   play-local opens the local terminal game.
   host opens the LAN terminal host.
   join opens the LAN terminal joiner.
+
+Network test env:
+  GLADIATOR_NET_DROP_EVERY=N drops every Nth outbound session packet.
+  GLADIATOR_NET_DELAY_MS=N adds base outbound session delay.
+  GLADIATOR_NET_JITTER_MS=N adds deterministic outbound session jitter.
 `)
 }

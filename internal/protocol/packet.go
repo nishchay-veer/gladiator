@@ -16,7 +16,7 @@ const (
 	maxBulletsPerPacket = 256
 	minInt32            = -1 << 31
 	maxInt32            = 1<<31 - 1
-	packetHeaderSize    = 26
+	packetHeaderSize    = 34
 )
 
 var packetMagic = [4]byte{'G', 'L', 'A', 'D'}
@@ -36,6 +36,8 @@ type Packet struct {
 	Type      PacketType
 	SessionID uint64
 	Sequence  uint32
+	Ack       uint32
+	AckBits   uint32
 	Tick      uint64
 	Payload   Payload
 }
@@ -92,6 +94,8 @@ func Encode(packet Packet) ([]byte, error) {
 	writer.u8(uint8(packet.Type))
 	writer.u64(packet.SessionID)
 	writer.u32(packet.Sequence)
+	writer.u32(packet.Ack)
+	writer.u32(packet.AckBits)
 	writer.u64(packet.Tick)
 	writePayload(&writer, packet)
 
@@ -125,6 +129,8 @@ func Decode(data []byte) (Packet, error) {
 		Type:      PacketType(reader.u8()),
 		SessionID: reader.u64(),
 		Sequence:  reader.u32(),
+		Ack:       reader.u32(),
+		AckBits:   reader.u32(),
 		Tick:      reader.u64(),
 	}
 

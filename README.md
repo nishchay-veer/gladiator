@@ -37,6 +37,15 @@ go run ./cmd/gladiator join <host-ip>
 
 The default LAN port is `42424`. See `docs/lan-test-checklist.md` for the manual two-machine test flow.
 
+Network test knobs:
+
+```sh
+GLADIATOR_NET_DROP_EVERY=5 GLADIATOR_NET_DELAY_MS=20 GLADIATOR_NET_JITTER_MS=10 go run ./cmd/gladiator join <host-ip>
+```
+
+These apply to outbound session packets for `host` and `join`.
+Press `n` during `host` or `join` to toggle the compact network debug line.
+
 ## Test
 
 ```sh

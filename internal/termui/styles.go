@@ -15,6 +15,7 @@ type renderStyles struct {
 type hudStyleSet struct {
 	primary tcell.Style
 	help    tcell.Style
+	debug   tcell.Style
 }
 
 func arenaStyles() renderStyles {
@@ -33,5 +34,6 @@ func hudStyles() hudStyleSet {
 	return hudStyleSet{
 		primary: tcell.StyleDefault.Foreground(tcell.NewRGBColor(185, 197, 214)).Background(tcell.NewRGBColor(3, 7, 12)),
 		help:    tcell.StyleDefault.Foreground(tcell.NewRGBColor(104, 116, 132)).Background(tcell.NewRGBColor(3, 7, 12)),
+		debug:   tcell.StyleDefault.Foreground(tcell.NewRGBColor(88, 190, 214)).Background(tcell.NewRGBColor(3, 7, 12)),
 	}
 }

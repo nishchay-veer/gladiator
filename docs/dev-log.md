@@ -177,3 +177,27 @@
 ### GitHub Prep
 
 - Added a lightweight README and `.gitignore` so the project is ready for its first GitHub push.
+
+### Netcode Hardening Start
+
+- Extended the UDP protocol header with `Ack` and `AckBits` fields so each packet can report the newest peer packet seen plus a 32-packet receive window.
+- Added a small netplay receive window that tracks accepted, duplicate, stale, reordered, and estimated-lost packets without pulling in a heavy networking library.
+- Wired host and client sessions to fill ack fields on outgoing packets and ignore duplicate/stale gameplay inputs or snapshots.
+- Added packet stats accessors on host/client for the future debug overlay.
+- Added tests for ack-bit behavior, duplicate/stale drops, sequence wrap handling, and loopback packet stats.
+
+### Netplay Link Simulator
+
+- Added a deterministic local link simulator for continuous netplay sessions.
+- Session send paths can now simulate outbound packet loss, base delay, and jitter without changing the game core or protocol payloads.
+- Exposed per-session link stats for queued, sent, delayed, and dropped packets so a debug overlay can show local send-side behavior later.
+- Added `GLADIATOR_NET_DROP_EVERY`, `GLADIATOR_NET_DELAY_MS`, and `GLADIATOR_NET_JITTER_MS` so host/join runs can opt into simulated bad network conditions from the terminal.
+- Added tests for deterministic jitter timing, option normalization, and loopback loss/jitter surfacing through host receive stats.
+
+### Terminal Network Debug Overlay
+
+- Exposed receive-side packet stats and send-side simulated-link stats through host/client sessions.
+- Added a terminal HUD debug line that can be toggled with `n` during host or join play.
+- The debug line shows received packets, dropped/duplicate/stale counts, estimated loss, sent/queued packets, simulated drops, and delayed packets.
+- Kept the overlay out of the default view so normal local and LAN play stays visually clean.
+- Added focused tests for the debug snapshot, formatting, and key mapping.

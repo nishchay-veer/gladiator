@@ -25,8 +25,8 @@ type Host struct {
 	remote   *net.UDPAddr
 	sequence uint32
 
-	remoteInputSequence uint32
-	remoteLastSeen      time.Time
+	remotePackets  packetWindow
+	remoteLastSeen time.Time
 }
 
 func ListenHost(opts HostOptions) (*Host, error) {
@@ -109,6 +109,13 @@ func (h *Host) RemoteConnected() bool {
 	return h.remote != nil
 }
 
+func (h *Host) Stats() NetworkStats {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.remotePackets.Stats()
+}
+
 func (h *Host) handlePacket(addr *net.UDPAddr, packet protocol.Packet) error {
 	switch packet.Type {
 	case protocol.PacketHello:
@@ -139,16 +146,20 @@ func (h *Host) handleHello(addr *net.UDPAddr, packet protocol.Packet) error {
 	}
 
 	if h.remote == nil {
-		h.remoteInputSequence = 0
+		h.remotePackets = packetWindow{}
 	}
 	h.remote = cloneUDPAddr(addr)
 	h.remoteLastSeen = time.Now()
+	h.remotePackets.Observe(packet.Sequence)
+	ack, ackBits := h.remotePackets.Ack()
 	snapshot := h.state.Snapshot()
 	mapHash := h.state.Arena.Hash()
 	response := protocol.Packet{
 		Type:      protocol.PacketWelcome,
 		SessionID: h.sessionID,
 		Sequence:  h.nextSequenceLocked(),
+		Ack:       ack,
+		AckBits:   ackBits,
 		Tick:      snapshot.Tick,
 		Payload: protocol.WelcomePayload{
 			PlayerID: game.PlayerTwo,
@@ -175,6 +186,12 @@ func (h *Host) handleInput(addr *net.UDPAddr, packet protocol.Packet) error {
 		return nil
 	}
 
+	observation := h.remotePackets.Observe(packet.Sequence)
+	if !observation.Advanced {
+		h.mu.Unlock()
+		return nil
+	}
+
 	if payload.Command.Tick == h.state.Tick {
 		frame := game.NewInputFrame(h.state.Tick)
 		frame.Set(payload.Command)
@@ -182,10 +199,13 @@ func (h *Host) handleInput(addr *net.UDPAddr, packet protocol.Packet) error {
 	}
 
 	snapshot := h.state.Snapshot()
+	ack, ackBits := h.remotePackets.Ack()
 	response := protocol.Packet{
 		Type:      protocol.PacketSnapshot,
 		SessionID: h.sessionID,
 		Sequence:  h.nextSequenceLocked(),
+		Ack:       ack,
+		AckBits:   ackBits,
 		Tick:      snapshot.Tick,
 		Payload:   protocol.SnapshotPayload{Snapshot: snapshot},
 	}
@@ -199,6 +219,7 @@ func (h *Host) handlePing(addr *net.UDPAddr, packet protocol.Packet) {
 	defer h.mu.Unlock()
 
 	if packet.SessionID == h.sessionID && sameUDPAddr(h.remote, addr) {
+		h.remotePackets.Observe(packet.Sequence)
 		h.remoteLastSeen = time.Now()
 	}
 }
@@ -209,7 +230,7 @@ func (h *Host) handleDisconnect(addr *net.UDPAddr, packet protocol.Packet) {
 
 	if packet.SessionID == h.sessionID && sameUDPAddr(h.remote, addr) {
 		h.remote = nil
-		h.remoteInputSequence = 0
+		h.remotePackets = packetWindow{}
 		h.remoteLastSeen = time.Time{}
 	}
 }
@@ -226,7 +247,7 @@ func (h *Host) disconnectTimedOutRemote(now time.Time, timeout time.Duration) bo
 	}
 
 	h.remote = nil
-	h.remoteInputSequence = 0
+	h.remotePackets = packetWindow{}
 	h.remoteLastSeen = time.Time{}
 	return true
 }

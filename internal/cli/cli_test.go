@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRunHelp(t *testing.T) {
@@ -110,5 +111,33 @@ func TestJoinTargetAddress(t *testing.T) {
 				t.Fatalf("joinTargetAddress() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestLinkSimulationFromEnv(t *testing.T) {
+	t.Setenv("GLADIATOR_NET_DROP_EVERY", "3")
+	t.Setenv("GLADIATOR_NET_DELAY_MS", "12")
+	t.Setenv("GLADIATOR_NET_JITTER_MS", "5")
+
+	got, err := linkSimulationFromEnv()
+	if err != nil {
+		t.Fatalf("linkSimulationFromEnv() error = %v", err)
+	}
+	if got.DropEvery != 3 {
+		t.Fatalf("drop every = %d, want 3", got.DropEvery)
+	}
+	if got.BaseDelay != 12*time.Millisecond {
+		t.Fatalf("base delay = %s, want 12ms", got.BaseDelay)
+	}
+	if got.Jitter != 5*time.Millisecond {
+		t.Fatalf("jitter = %s, want 5ms", got.Jitter)
+	}
+}
+
+func TestLinkSimulationFromEnvRejectsInvalidValue(t *testing.T) {
+	t.Setenv("GLADIATOR_NET_DROP_EVERY", "-1")
+
+	if _, err := linkSimulationFromEnv(); err == nil {
+		t.Fatal("linkSimulationFromEnv() error = nil, want invalid value error")
 	}
 }

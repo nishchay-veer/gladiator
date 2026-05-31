@@ -121,6 +121,11 @@ func (a *localApp) drawHUD(x, y int) {
 
 	drawText(a.screen, x, y, styles.primary, line)
 	drawText(a.screen, x, y+1, styles.help, " WASD/Arrows move   Space/Enter shoot   q/Esc quits ")
+	if a.showNetDebug {
+		if line := netDebugLine(a.netDebug); line != "" {
+			drawTextClipped(a.screen, x, y+2, styles.debug, line, a.state.Arena.Width*2)
+		}
+	}
 }
 
 func drawFloor(screen tcell.Screen, x, y, arenaX, arenaY int, styles renderStyles) {
@@ -139,6 +144,21 @@ func drawTile(screen tcell.Screen, x, y int, style tcell.Style, left, right rune
 func drawText(screen tcell.Screen, x, y int, style tcell.Style, text string) {
 	col := 0
 	for _, r := range text {
+		screen.SetContent(x+col, y, r, nil, style)
+		col++
+	}
+}
+
+func drawTextClipped(screen tcell.Screen, x, y int, style tcell.Style, text string, maxCells int) {
+	if maxCells <= 0 {
+		return
+	}
+
+	col := 0
+	for _, r := range text {
+		if col >= maxCells {
+			return
+		}
 		screen.SetContent(x+col, y, r, nil, style)
 		col++
 	}

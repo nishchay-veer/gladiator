@@ -16,16 +16,18 @@ type PlayLocalOptions struct {
 }
 
 type PlayHostOptions struct {
-	Config config.Config
-	Addr   string
+	Config         config.Config
+	Addr           string
+	LinkSimulation netplay.LinkSimulation
 }
 
 type PlayJoinOptions struct {
-	Config       config.Config
-	HostAddr     string
-	PlayerName   string
-	BuildVersion string
-	JoinTimeout  time.Duration
+	Config         config.Config
+	HostAddr       string
+	PlayerName     string
+	BuildVersion   string
+	JoinTimeout    time.Duration
+	LinkSimulation netplay.LinkSimulation
 }
 
 func PlayLocal(ctx context.Context, opts PlayLocalOptions) error {
@@ -100,6 +102,7 @@ func PlayHost(ctx context.Context, opts PlayHostOptions) error {
 	session := host.StartSession(sessionCtx, netplay.SessionOptions{
 		SimulationRate: cfg.SimulationRate,
 		SnapshotRate:   cfg.SnapshotRate,
+		LinkSimulation: opts.LinkSimulation,
 	})
 
 	app := localApp{
@@ -167,6 +170,7 @@ func PlayJoin(ctx context.Context, opts PlayJoinOptions) error {
 	session := client.StartJoinedSession(sessionCtx, welcome, netplay.SessionOptions{
 		SimulationRate: cfg.SimulationRate,
 		SnapshotRate:   cfg.SnapshotRate,
+		LinkSimulation: opts.LinkSimulation,
 	})
 
 	app := localApp{
@@ -189,13 +193,15 @@ func PlayJoin(ctx context.Context, opts PlayJoinOptions) error {
 }
 
 type localApp struct {
-	screen  tcell.Screen
-	cfg     config.Config
-	state   game.State
-	events  chan tcell.Event
-	player  game.PlayerID
-	status  string
-	pending game.InputCommand
+	screen       tcell.Screen
+	cfg          config.Config
+	state        game.State
+	events       chan tcell.Event
+	player       game.PlayerID
+	status       string
+	pending      game.InputCommand
+	showNetDebug bool
+	netDebug     netDebugStats
 
 	fpsWindow time.Time
 	frames    int
@@ -242,17 +248,24 @@ func (a *localApp) run(ctx context.Context) error {
 }
 
 func (a *localApp) runHost(ctx context.Context, session netplay.HostSession) error {
-	return a.runSession(ctx, session.Inputs, session.Snapshots, session.PeerStatus, session.Errors)
+	return a.runSession(ctx, session.Inputs, session.Snapshots, session.PeerStatus, session.Errors, netDebugSource{
+		NetworkStats: session.NetworkStats,
+		LinkStats:    session.LinkStats,
+	})
 }
 
 func (a *localApp) runClient(ctx context.Context, session netplay.ClientSession) error {
-	return a.runSession(ctx, session.Inputs, session.Snapshots, nil, session.Errors)
+	return a.runSession(ctx, session.Inputs, session.Snapshots, nil, session.Errors, netDebugSource{
+		NetworkStats: session.NetworkStats,
+		LinkStats:    session.LinkStats,
+	})
 }
 
-func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputCommand, snapshots <-chan game.Snapshot, peerStatus <-chan netplay.PeerStatus, errors <-chan error) error {
+func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputCommand, snapshots <-chan game.Snapshot, peerStatus <-chan netplay.PeerStatus, errors <-chan error, debugSource netDebugSource) error {
 	ticker := time.NewTicker(a.cfg.SimulationRate)
 	defer ticker.Stop()
 
+	a.updateNetDebug(debugSource)
 	a.draw()
 
 	for {
@@ -263,6 +276,7 @@ func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputComma
 			return err
 		case snapshot := <-snapshots:
 			a.state = applySnapshot(a.state, snapshot)
+			a.updateNetDebug(debugSource)
 			a.draw()
 		case status, ok := <-peerStatus:
 			if !ok {
@@ -278,11 +292,20 @@ func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputComma
 			if quit := a.handleEvent(event); quit {
 				return nil
 			}
+			a.updateNetDebug(debugSource)
 			a.draw()
 		case <-ticker.C:
 			a.sendPendingCommand(inputs)
+			if a.showNetDebug {
+				a.updateNetDebug(debugSource)
+				a.draw()
+			}
 		}
 	}
+}
+
+func (a *localApp) updateNetDebug(source netDebugSource) {
+	a.netDebug = source.snapshot()
 }
 
 func peerStatusText(status netplay.PeerStatus) string {

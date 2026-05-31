@@ -21,12 +21,14 @@ func TestInputPacketRoundTrip(t *testing.T) {
 		Type:      PacketInput,
 		SessionID: 1234,
 		Sequence:  99,
+		Ack:       41,
+		AckBits:   0b101,
 		Tick:      command.Tick,
 		Payload:   InputPayload{Command: command},
 	}
 
 	got := roundTripPacket(t, packet)
-	if got.Type != packet.Type || got.SessionID != packet.SessionID || got.Sequence != packet.Sequence || got.Tick != packet.Tick {
+	if got.Type != packet.Type || got.SessionID != packet.SessionID || got.Sequence != packet.Sequence || got.Ack != packet.Ack || got.AckBits != packet.AckBits || got.Tick != packet.Tick {
 		t.Fatalf("packet header mismatch\ngot:  %#v\nwant: %#v", got, packet)
 	}
 

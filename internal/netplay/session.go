@@ -25,6 +25,7 @@ type SessionOptions struct {
 	PeerTimeout    time.Duration
 	InputBuffer    int
 	SnapshotBuffer int
+	LinkSimulation LinkSimulation
 }
 
 type PeerStatus struct {
@@ -33,17 +34,21 @@ type PeerStatus struct {
 }
 
 type HostSession struct {
-	Inputs     chan<- game.InputCommand
-	Snapshots  <-chan game.Snapshot
-	PeerStatus <-chan PeerStatus
-	Errors     <-chan error
+	Inputs       chan<- game.InputCommand
+	Snapshots    <-chan game.Snapshot
+	PeerStatus   <-chan PeerStatus
+	Errors       <-chan error
+	NetworkStats func() NetworkStats
+	LinkStats    func() LinkStats
 }
 
 type ClientSession struct {
-	Join      JoinResult
-	Inputs    chan<- game.InputCommand
-	Snapshots <-chan game.Snapshot
-	Errors    <-chan error
+	Join         JoinResult
+	Inputs       chan<- game.InputCommand
+	Snapshots    <-chan game.Snapshot
+	Errors       <-chan error
+	NetworkStats func() NetworkStats
+	LinkStats    func() LinkStats
 }
 
 func (h *Host) StartSession(ctx context.Context, opts SessionOptions) HostSession {
@@ -54,16 +59,19 @@ func (h *Host) StartSession(ctx context.Context, opts SessionOptions) HostSessio
 	snapshots := make(chan game.Snapshot, opts.SnapshotBuffer)
 	peerStatus := make(chan PeerStatus, opts.SnapshotBuffer)
 	errors := make(chan error, 1)
+	sender := newPacketSender(h.conn, opts.LinkSimulation)
 
 	go h.runSessionPackets(ctx, remoteInputs, peerStatus, errors)
-	go h.runSessionTicks(ctx, opts, localInputs, remoteInputs, snapshots, errors)
+	go h.runSessionTicks(ctx, opts, sender, localInputs, remoteInputs, snapshots, errors)
 	go h.runSessionTimeouts(ctx, opts, peerStatus)
 
 	return HostSession{
-		Inputs:     localInputs,
-		Snapshots:  snapshots,
-		PeerStatus: peerStatus,
-		Errors:     errors,
+		Inputs:       localInputs,
+		Snapshots:    snapshots,
+		PeerStatus:   peerStatus,
+		Errors:       errors,
+		NetworkStats: h.Stats,
+		LinkStats:    sender.Stats,
 	}
 }
 
@@ -84,6 +92,7 @@ func (c *Client) StartJoinedSession(ctx context.Context, join JoinResult, opts S
 	inputs := make(chan game.InputCommand, opts.InputBuffer)
 	snapshots := make(chan game.Snapshot, opts.SnapshotBuffer)
 	errors := make(chan error, 1)
+	sender := newPacketSender(c.conn, opts.LinkSimulation)
 
 	c.mu.Lock()
 	c.sessionID = join.SessionID
@@ -92,13 +101,15 @@ func (c *Client) StartJoinedSession(ctx context.Context, join JoinResult, opts S
 
 	offerSnapshot(snapshots, join.Snapshot)
 	go c.runSessionReads(ctx, join.SessionID, snapshots, errors)
-	go c.runSessionWrites(ctx, join, opts, inputs, errors)
+	go c.runSessionWrites(ctx, join, opts, sender, inputs, errors)
 
 	return ClientSession{
-		Join:      join,
-		Inputs:    inputs,
-		Snapshots: snapshots,
-		Errors:    errors,
+		Join:         join,
+		Inputs:       inputs,
+		Snapshots:    snapshots,
+		Errors:       errors,
+		NetworkStats: c.Stats,
+		LinkStats:    sender.Stats,
 	}
 }
 
@@ -166,14 +177,14 @@ func (h *Host) runSessionPackets(ctx context.Context, remoteInputs chan game.Inp
 	}
 }
 
-func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, localInputs <-chan game.InputCommand, remoteInputs <-chan game.InputCommand, snapshots chan game.Snapshot, errors chan<- error) {
+func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, sender *packetSender, localInputs <-chan game.InputCommand, remoteInputs <-chan game.InputCommand, snapshots chan game.Snapshot, errors chan<- error) {
 	simulationTicker := time.NewTicker(opts.SimulationRate)
 	defer simulationTicker.Stop()
 
 	snapshotTicker := time.NewTicker(opts.SnapshotRate)
 	defer snapshotTicker.Stop()
 
-	h.publishCurrentSnapshot(snapshots, errors)
+	h.publishCurrentSnapshot(ctx, sender, snapshots, errors)
 
 	for {
 		select {
@@ -192,7 +203,7 @@ func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, localIn
 			h.state.Step(frame)
 			h.mu.Unlock()
 		case <-snapshotTicker.C:
-			h.publishCurrentSnapshot(snapshots, errors)
+			h.publishCurrentSnapshot(ctx, sender, snapshots, errors)
 		}
 	}
 }
@@ -213,16 +224,19 @@ func (h *Host) runSessionTimeouts(ctx context.Context, opts SessionOptions, peer
 	}
 }
 
-func (h *Host) publishCurrentSnapshot(snapshots chan game.Snapshot, errors chan<- error) {
+func (h *Host) publishCurrentSnapshot(ctx context.Context, sender *packetSender, snapshots chan game.Snapshot, errors chan<- error) {
 	h.mu.Lock()
 	snapshot := h.state.Snapshot()
 	remote := cloneUDPAddr(h.remote)
 	var packet protocol.Packet
 	if remote != nil {
+		ack, ackBits := h.remotePackets.Ack()
 		packet = protocol.Packet{
 			Type:      protocol.PacketSnapshot,
 			SessionID: h.sessionID,
 			Sequence:  h.nextSequenceLocked(),
+			Ack:       ack,
+			AckBits:   ackBits,
 			Tick:      snapshot.Tick,
 			Payload:   protocol.SnapshotPayload{Snapshot: snapshot},
 		}
@@ -231,9 +245,7 @@ func (h *Host) publishCurrentSnapshot(snapshots chan game.Snapshot, errors chan<
 
 	offerSnapshot(snapshots, snapshot)
 	if remote != nil {
-		if err := sendPacket(h.conn, remote, packet); err != nil {
-			reportSessionError(errors, err)
-		}
+		sender.Send(ctx, remote, packet, errors)
 	}
 }
 
@@ -245,23 +257,21 @@ func (h *Host) queueRemoteInput(addr *net.UDPAddr, packet protocol.Packet, remot
 
 	h.mu.Lock()
 	knownRemote := packet.SessionID == h.sessionID && sameUDPAddr(h.remote, addr) && payload.Command.PlayerID == game.PlayerTwo
-	accept := knownRemote && packet.Sequence > h.remoteInputSequence
+	var observation packetObservation
 	if knownRemote {
+		observation = h.remotePackets.Observe(packet.Sequence)
 		h.remoteLastSeen = time.Now()
-	}
-	if accept {
-		h.remoteInputSequence = packet.Sequence
 	}
 	h.mu.Unlock()
 
-	if accept {
+	if knownRemote && observation.Advanced {
 		offerCommand(remoteInputs, payload.Command)
 	}
 }
 
 func (c *Client) runSessionReads(ctx context.Context, sessionID uint64, snapshots chan game.Snapshot, errors chan<- error) {
 	for {
-		packet, err := c.readFromHost(ctx)
+		packet, observation, err := c.readPacketFromHost(ctx)
 		if err != nil {
 			if sessionDone(ctx, err) {
 				return
@@ -269,7 +279,7 @@ func (c *Client) runSessionReads(ctx context.Context, sessionID uint64, snapshot
 			reportSessionError(errors, err)
 			return
 		}
-		if packet.Type != protocol.PacketSnapshot || packet.SessionID != sessionID {
+		if packet.Type != protocol.PacketSnapshot || packet.SessionID != sessionID || !observation.Advanced {
 			continue
 		}
 
@@ -280,7 +290,7 @@ func (c *Client) runSessionReads(ctx context.Context, sessionID uint64, snapshot
 	}
 }
 
-func (c *Client) runSessionWrites(ctx context.Context, join JoinResult, opts SessionOptions, inputs <-chan game.InputCommand, errors chan<- error) {
+func (c *Client) runSessionWrites(ctx context.Context, join JoinResult, opts SessionOptions, sender *packetSender, inputs <-chan game.InputCommand, errors chan<- error) {
 	heartbeatTicker := time.NewTicker(opts.HeartbeatRate)
 	defer heartbeatTicker.Stop()
 
@@ -289,39 +299,33 @@ func (c *Client) runSessionWrites(ctx context.Context, join JoinResult, opts Ses
 		case <-ctx.Done():
 			return
 		case <-heartbeatTicker.C:
+			sequence, ack, ackBits := c.nextPacketHeader()
 			packet := protocol.Packet{
 				Type:      protocol.PacketPing,
 				SessionID: join.SessionID,
-				Sequence:  c.nextSequence(),
+				Sequence:  sequence,
+				Ack:       ack,
+				AckBits:   ackBits,
 				Payload:   protocol.PingPayload{SentAtUnixMillis: time.Now().UnixMilli()},
 			}
-			if err := sendPacket(c.conn, c.hostAddr, packet); err != nil {
-				if sessionDone(ctx, err) {
-					return
-				}
-				reportSessionError(errors, err)
-				return
-			}
+			sender.Send(ctx, c.hostAddr, packet, errors)
 		case command, ok := <-inputs:
 			if !ok {
 				return
 			}
 			command.PlayerID = join.PlayerID
-			command.Sequence = c.nextSequence()
+			sequence, ack, ackBits := c.nextPacketHeader()
+			command.Sequence = sequence
 			packet := protocol.Packet{
 				Type:      protocol.PacketInput,
 				SessionID: join.SessionID,
 				Sequence:  command.Sequence,
+				Ack:       ack,
+				AckBits:   ackBits,
 				Tick:      command.Tick,
 				Payload:   protocol.InputPayload{Command: command},
 			}
-			if err := sendPacket(c.conn, c.hostAddr, packet); err != nil {
-				if sessionDone(ctx, err) {
-					return
-				}
-				reportSessionError(errors, err)
-				return
-			}
+			sender.Send(ctx, c.hostAddr, packet, errors)
 		}
 	}
 }

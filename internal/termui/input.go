@@ -17,6 +17,7 @@ const (
 	actionMoveLeft
 	actionMoveRight
 	actionFire
+	actionToggleNetDebug
 	actionResize
 )
 
@@ -36,6 +37,8 @@ func (a *localApp) handleEvent(event tcell.Event) bool {
 		a.queueMove(1, 0)
 	case actionFire:
 		a.pending.Buttons |= game.ButtonFire
+	case actionToggleNetDebug:
+		a.showNetDebug = !a.showNetDebug
 	}
 
 	return false
@@ -109,6 +112,8 @@ func (a *localApp) actionForKey(event *tcell.EventKey) inputAction {
 
 func actionForRune(r rune, controls config.Controls) inputAction {
 	switch {
+	case r == 'n' || r == 'N':
+		return actionToggleNetDebug
 	case runeIn(r, controls.Quit):
 		return actionQuit
 	case runeIn(r, controls.Up):

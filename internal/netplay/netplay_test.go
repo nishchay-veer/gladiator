@@ -2,10 +2,12 @@ package netplay
 
 import (
 	"context"
+	"net"
 	"testing"
 	"time"
 
 	"gladiator/internal/game"
+	"gladiator/internal/protocol"
 )
 
 func TestLoopbackJoinAndInputSnapshot(t *testing.T) {
@@ -93,6 +95,72 @@ func TestLoopbackHostReturnsSnapshotForStaleInput(t *testing.T) {
 	}
 	if !stale.Equal(first) {
 		t.Fatalf("stale input advanced state\ngot:  %#v\nwant: %#v", stale, first)
+	}
+}
+
+func TestLoopbackPacketStatsTrackPeerSequences(t *testing.T) {
+	host := startLoopbackHost(t)
+	client := dialLoopbackClient(t, host)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	welcome, err := client.Join(ctx)
+	if err != nil {
+		t.Fatalf("Join() error = %v", err)
+	}
+
+	if stats := host.Stats(); stats.Ack != 1 || stats.PacketsReceived != 1 {
+		t.Fatalf("host stats after join = %#v, want ack 1 with one received packet", stats)
+	}
+	if stats := client.Stats(); stats.Ack != 1 || stats.PacketsReceived != 1 {
+		t.Fatalf("client stats after join = %#v, want ack 1 with one received packet", stats)
+	}
+
+	command := game.NewInputCommand(welcome.Snapshot.Tick, welcome.PlayerID)
+	command.MoveX = -1
+	command.Aim = game.Left
+	command.HasAim = true
+	if _, err := client.SendInput(ctx, command); err != nil {
+		t.Fatalf("SendInput() error = %v", err)
+	}
+
+	if stats := host.Stats(); stats.Ack != 2 || stats.PacketsReceived != 2 {
+		t.Fatalf("host stats after input = %#v, want ack 2 with two received packets", stats)
+	}
+	if stats := client.Stats(); stats.Ack != 2 || stats.PacketsReceived != 2 {
+		t.Fatalf("client stats after snapshot = %#v, want ack 2 with two received packets", stats)
+	}
+}
+
+func TestHostQueueRemoteInputDropsDuplicateSequences(t *testing.T) {
+	remote := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 9000}
+	host := &Host{
+		sessionID: 99,
+		remote:    remote,
+	}
+	remoteInputs := make(chan game.InputCommand, 2)
+
+	command := game.NewInputCommand(0, game.PlayerTwo)
+	command.Sequence = 1
+	packet := protocol.Packet{
+		Type:      protocol.PacketInput,
+		SessionID: 99,
+		Sequence:  1,
+		Tick:      command.Tick,
+		Payload:   protocol.InputPayload{Command: command},
+	}
+
+	host.queueRemoteInput(remote, packet, remoteInputs)
+	host.queueRemoteInput(remote, packet, remoteInputs)
+
+	if got := len(remoteInputs); got != 1 {
+		t.Fatalf("queued inputs = %d, want 1", got)
+	}
+	stats := host.Stats()
+	if stats.DuplicatePackets != 1 || stats.PacketsDropped != 1 {
+		t.Fatalf("host stats = %#v, want one duplicate drop", stats)
 	}
 }
 
@@ -193,6 +261,57 @@ func TestContinuousClientSessionStreamsSnapshotsAndRemoteInput(t *testing.T) {
 	if !host.Snapshot().Equal(moved) {
 		t.Fatalf("host snapshot and client snapshot diverged\nhost:   %#v\nclient: %#v", host.Snapshot(), moved)
 	}
+}
+
+func TestContinuousSessionSimulatesLossAndJitter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	host, err := ListenHost(HostOptions{
+		Addr:      "127.0.0.1:0",
+		SessionID: 9005,
+	})
+	if err != nil {
+		t.Fatalf("ListenHost() error = %v", err)
+	}
+	defer host.Close()
+
+	hostOpts := fastSessionOptions()
+	hostOpts.PeerTimeout = time.Second
+	hostSession := host.StartSession(ctx, hostOpts)
+
+	client := dialLoopbackClient(t, host)
+	defer client.Close()
+
+	clientOpts := fastSessionOptions()
+	clientOpts.HeartbeatRate = time.Hour
+	clientOpts.LinkSimulation = LinkSimulation{
+		DropEvery: 2,
+		BaseDelay: time.Millisecond,
+		Jitter:    time.Millisecond,
+	}
+	clientSession, err := client.StartSession(ctx, clientOpts)
+	if err != nil {
+		t.Fatalf("StartSession() error = %v", err)
+	}
+
+	waitForPeerStatus(t, hostSession.PeerStatus, true, hostSession.Errors, clientSession.Errors)
+
+	for i := 0; i < 3; i++ {
+		command := game.NewInputCommand(0, clientSession.Join.PlayerID)
+		command.MoveX = -1
+		command.Aim = game.Left
+		command.HasAim = true
+		sendSessionInput(t, clientSession.Inputs, command)
+	}
+
+	waitForCondition(t, func() bool {
+		linkStats := clientSession.LinkStats()
+		networkStats := host.Stats()
+		return linkStats.PacketsDropped >= 1 &&
+			linkStats.PacketsDelayed >= 1 &&
+			networkStats.EstimatedLostPackets >= 1
+	}, hostSession.Errors, clientSession.Errors)
 }
 
 func TestContinuousSessionReportsPeerDisconnect(t *testing.T) {
@@ -376,6 +495,29 @@ func waitForPeerStatus(t *testing.T, statuses <-chan PeerStatus, connected bool,
 		case <-poll.C:
 		case <-deadline:
 			t.Fatalf("timed out waiting for peer connected=%v", connected)
+		}
+	}
+}
+
+func waitForCondition(t *testing.T, want func() bool, errors ...<-chan error) {
+	t.Helper()
+
+	deadline := time.After(time.Second)
+	poll := time.NewTicker(5 * time.Millisecond)
+	defer poll.Stop()
+
+	for {
+		if err := pollSessionErrors(errors...); err != nil {
+			t.Fatalf("session error = %v", err)
+		}
+		if want() {
+			return
+		}
+
+		select {
+		case <-poll.C:
+		case <-deadline:
+			t.Fatal("timed out waiting for condition")
 		}
 	}
 }

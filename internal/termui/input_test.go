@@ -21,6 +21,7 @@ func TestActionForRune(t *testing.T) {
 		{name: "left", key: 'a', want: actionMoveLeft},
 		{name: "right", key: 'd', want: actionMoveRight},
 		{name: "fire", key: ' ', want: actionFire},
+		{name: "net debug", key: 'n', want: actionToggleNetDebug},
 		{name: "quit", key: 'q', want: actionQuit},
 		{name: "none", key: '?', want: actionNone},
 	}
