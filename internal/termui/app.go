@@ -1,0 +1,296 @@
+package termui
+
+import (
+	"context"
+	"time"
+
+	"github.com/gdamore/tcell/v2"
+
+	"gladiator/internal/config"
+	"gladiator/internal/game"
+	"gladiator/internal/netplay"
+)
+
+type PlayLocalOptions struct {
+	Config config.Config
+}
+
+type PlayHostOptions struct {
+	Config config.Config
+	Addr   string
+}
+
+type PlayJoinOptions struct {
+	Config       config.Config
+	HostAddr     string
+	PlayerName   string
+	BuildVersion string
+	JoinTimeout  time.Duration
+}
+
+func PlayLocal(ctx context.Context, opts PlayLocalOptions) error {
+	cfg := opts.Config
+	if cfg.SimulationRate <= 0 {
+		cfg = config.Default()
+	}
+
+	state, err := game.NewLocalState()
+	if err != nil {
+		return err
+	}
+
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		return err
+	}
+	if err := screen.Init(); err != nil {
+		return err
+	}
+	defer screen.Fini()
+
+	screen.EnableMouse()
+	screen.HideCursor()
+
+	app := localApp{
+		screen:  screen,
+		cfg:     cfg,
+		state:   state,
+		events:  make(chan tcell.Event, 32),
+		player:  game.PlayerOne,
+		pending: game.NewInputCommand(state.Tick, game.PlayerOne),
+	}
+
+	go app.pollEvents()
+	return app.run(ctx)
+}
+
+func PlayHost(ctx context.Context, opts PlayHostOptions) error {
+	cfg := opts.Config
+	if cfg.SimulationRate <= 0 {
+		cfg = config.Default()
+	}
+
+	host, err := netplay.ListenHost(netplay.HostOptions{Addr: opts.Addr})
+	if err != nil {
+		return err
+	}
+	defer host.Close()
+
+	state, err := game.NewLocalState()
+	if err != nil {
+		return err
+	}
+	state = applySnapshot(state, host.Snapshot())
+
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		return err
+	}
+	if err := screen.Init(); err != nil {
+		return err
+	}
+	defer screen.Fini()
+
+	screen.EnableMouse()
+	screen.HideCursor()
+
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	session := host.StartSession(sessionCtx, netplay.SessionOptions{
+		SimulationRate: cfg.SimulationRate,
+		SnapshotRate:   cfg.SnapshotRate,
+	})
+
+	app := localApp{
+		screen:  screen,
+		cfg:     cfg,
+		state:   state,
+		events:  make(chan tcell.Event, 32),
+		player:  game.PlayerOne,
+		status:  peerStatusText(netplay.PeerStatus{}),
+		pending: game.NewInputCommand(state.Tick, game.PlayerOne),
+	}
+
+	go app.pollEvents()
+	return app.runHost(ctx, session)
+}
+
+func PlayJoin(ctx context.Context, opts PlayJoinOptions) error {
+	cfg := opts.Config
+	if cfg.SimulationRate <= 0 {
+		cfg = config.Default()
+	}
+
+	client, err := netplay.DialClient(netplay.ClientOptions{
+		HostAddr:     opts.HostAddr,
+		PlayerName:   opts.PlayerName,
+		BuildVersion: opts.BuildVersion,
+	})
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	joinTimeout := opts.JoinTimeout
+	if joinTimeout <= 0 {
+		joinTimeout = 5 * time.Second
+	}
+	joinCtx, cancelJoin := context.WithTimeout(ctx, joinTimeout)
+	welcome, err := client.Join(joinCtx)
+	cancelJoin()
+	if err != nil {
+		return err
+	}
+
+	state, err := game.NewLocalState()
+	if err != nil {
+		return err
+	}
+	state = applySnapshot(state, welcome.Snapshot)
+
+	screen, err := tcell.NewScreen()
+	if err != nil {
+		return err
+	}
+	if err := screen.Init(); err != nil {
+		return err
+	}
+	defer screen.Fini()
+
+	screen.EnableMouse()
+	screen.HideCursor()
+
+	sessionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	session := client.StartJoinedSession(sessionCtx, welcome, netplay.SessionOptions{
+		SimulationRate: cfg.SimulationRate,
+		SnapshotRate:   cfg.SnapshotRate,
+	})
+
+	app := localApp{
+		screen:  screen,
+		cfg:     cfg,
+		state:   state,
+		events:  make(chan tcell.Event, 32),
+		player:  welcome.PlayerID,
+		status:  "LAN P2",
+		pending: game.NewInputCommand(state.Tick, welcome.PlayerID),
+	}
+
+	go app.pollEvents()
+	err = app.runClient(ctx, session)
+	cancel()
+	disconnectCtx, cancelDisconnect := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	_ = client.Disconnect(disconnectCtx, "quit")
+	cancelDisconnect()
+	return err
+}
+
+type localApp struct {
+	screen  tcell.Screen
+	cfg     config.Config
+	state   game.State
+	events  chan tcell.Event
+	player  game.PlayerID
+	status  string
+	pending game.InputCommand
+
+	fpsWindow time.Time
+	frames    int
+	fps       int
+}
+
+func (a *localApp) pollEvents() {
+	for {
+		event := a.screen.PollEvent()
+		if event == nil {
+			close(a.events)
+			return
+		}
+		a.events <- event
+	}
+}
+
+func (a *localApp) run(ctx context.Context) error {
+	ticker := time.NewTicker(a.cfg.SimulationRate)
+	defer ticker.Stop()
+
+	a.draw()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event, ok := <-a.events:
+			if !ok {
+				return nil
+			}
+			if quit := a.handleEvent(event); quit {
+				return nil
+			}
+			a.draw()
+		case <-ticker.C:
+			frame := game.NewInputFrame(a.state.Tick)
+			frame.Set(a.consumePendingCommand())
+			frame.Set(a.state.BotCommand(game.PlayerTwo, game.PlayerOne, a.state.Tick))
+			a.state.Step(frame)
+			a.draw()
+		}
+	}
+}
+
+func (a *localApp) runHost(ctx context.Context, session netplay.HostSession) error {
+	return a.runSession(ctx, session.Inputs, session.Snapshots, session.PeerStatus, session.Errors)
+}
+
+func (a *localApp) runClient(ctx context.Context, session netplay.ClientSession) error {
+	return a.runSession(ctx, session.Inputs, session.Snapshots, nil, session.Errors)
+}
+
+func (a *localApp) runSession(ctx context.Context, inputs chan<- game.InputCommand, snapshots <-chan game.Snapshot, peerStatus <-chan netplay.PeerStatus, errors <-chan error) error {
+	ticker := time.NewTicker(a.cfg.SimulationRate)
+	defer ticker.Stop()
+
+	a.draw()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case err := <-errors:
+			return err
+		case snapshot := <-snapshots:
+			a.state = applySnapshot(a.state, snapshot)
+			a.draw()
+		case status, ok := <-peerStatus:
+			if !ok {
+				peerStatus = nil
+				continue
+			}
+			a.status = peerStatusText(status)
+			a.draw()
+		case event, ok := <-a.events:
+			if !ok {
+				return nil
+			}
+			if quit := a.handleEvent(event); quit {
+				return nil
+			}
+			a.draw()
+		case <-ticker.C:
+			a.sendPendingCommand(inputs)
+		}
+	}
+}
+
+func peerStatusText(status netplay.PeerStatus) string {
+	if status.Connected {
+		return "P2 LIVE"
+	}
+	if status.Reason == "timeout" {
+		return "P2 LOST"
+	}
+	return "P2 WAIT"
+}
