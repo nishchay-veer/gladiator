@@ -1,6 +1,6 @@
 # Gladiator
 
-Gladiator is a Go terminal LAN shooter prototype for two players.
+Gladiator is a Go terminal LAN shooting game for two players.
 
 The current build supports:
 
