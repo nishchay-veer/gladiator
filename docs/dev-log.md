@@ -263,3 +263,8 @@
 
 - Set the first release target to `v1.0.0`.
 - Updated the fallback app version to `1.0.0` so direct source installs and non-GoReleaser builds report the same public version.
+
+### macOS Gatekeeper Note
+
+- Documented the first-run macOS Gatekeeper warning for unsigned GitHub release binaries.
+- Added the quarantine-removal workaround for trusted official downloads and kept Developer ID signing/notarization as future release polish.

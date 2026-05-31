@@ -29,6 +29,13 @@ Unpack it, put `gladiator` somewhere on your `PATH`, then run:
 gladiator version
 ```
 
+On macOS, the first unsigned release may be blocked by Gatekeeper. If you trust the GitHub release you downloaded, remove the download quarantine flag:
+
+```sh
+xattr -d com.apple.quarantine ./gladiator
+./gladiator version
+```
+
 From source with Go:
 
 ```sh

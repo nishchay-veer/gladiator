@@ -32,6 +32,29 @@ After unpacking, the user puts the binary somewhere on their `PATH` and runs:
 gladiator version
 ```
 
+## macOS First Run
+
+The first GitHub-only macOS releases are unsigned and not notarized, so Gatekeeper may show:
+
+```text
+Apple could not verify "gladiator" is free of malware that may harm your Mac or compromise your privacy.
+```
+
+For a release downloaded from the official GitHub repo, the user can remove the download quarantine flag:
+
+```sh
+xattr -d com.apple.quarantine ./gladiator
+./gladiator version
+```
+
+If the file is not executable after extraction:
+
+```sh
+chmod +x ./gladiator
+```
+
+Longer term, avoid this warning by signing with an Apple Developer ID certificate and notarizing the macOS artifacts before publishing them.
+
 Users with Go installed can also install from source:
 
 ```sh
@@ -72,4 +95,5 @@ git push origin v1.0.0
 - The GitHub tag is `v1.0.0` for the first release.
 - The GitHub release includes macOS, Linux, Windows, and checksum artifacts.
 - macOS firewall hosting notes are visible in the README or release notes.
+- macOS Gatekeeper notes are visible until Developer ID signing and notarization are added.
 - A public license is chosen before calling the project generally installable.
