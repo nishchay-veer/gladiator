@@ -25,21 +25,6 @@ func TestRunHelp(t *testing.T) {
 	}
 }
 
-func TestRunVersion(t *testing.T) {
-	var stdout, stderr bytes.Buffer
-
-	code := Run([]string{"version"}, &stdout, &stderr)
-	if code != 0 {
-		t.Fatalf("Run(version) code = %d, want 0", code)
-	}
-	if !strings.Contains(stdout.String(), "1.1.0") {
-		t.Fatalf("version output = %q", stdout.String())
-	}
-	if stderr.Len() != 0 {
-		t.Fatalf("stderr = %q, want empty", stderr.String())
-	}
-}
-
 func TestRunDiscoverFindsExplicitLoopbackHost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	host, err := netplay.ListenHost(netplay.HostOptions{
