@@ -67,7 +67,7 @@ go install github.com/nishchay-veer/gladiator/cmd/gladiator@latest
 
 ```sh
 make test
-make build VERSION=1.0.0
+make build VERSION=<version>
 bin/gladiator version
 ```
 
@@ -81,8 +81,8 @@ goreleaser release --snapshot --clean
 3. Create a GitHub release by pushing a tag:
 
 ```sh
-git tag v1.0.0
-git push origin v1.0.0
+git tag v<version>
+git push origin v<version>
 ```
 
 4. GitHub Actions runs tests, then GoReleaser publishes release archives and checksums to the GitHub repo.
@@ -91,10 +91,10 @@ git push origin v1.0.0
 
 - `go test ./...` passes.
 - `go test -race ./...` passes before publishing a release candidate.
-- `make build VERSION=1.0.0` prints `gladiator 1.0.0` from `gladiator version`.
-- `make snapshot VERSION=1.0.0` cross-builds the supported OS/architecture matrix.
+- `make build VERSION=<version>` prints the expected version from `gladiator version`.
+- `make snapshot VERSION=<version>` cross-builds the supported OS/architecture matrix.
 - The `ci` GitHub Actions workflow is green on `main`.
-- The GitHub tag is `v1.0.0` for the first release.
+- The GitHub tag matches the release version.
 - The GitHub release includes macOS, Linux, Windows, and checksum artifacts.
 - `gladiator host` and `gladiator join <host-ip>` ask for player names before opening the arena.
 - macOS firewall hosting notes are visible in the README or release notes.
