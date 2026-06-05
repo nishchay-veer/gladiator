@@ -117,11 +117,11 @@ func TestSmallPayloadPacketRoundTrips(t *testing.T) {
 				Sequence:  1,
 				Payload: HelloPayload{
 					PlayerName:   "nish",
-					BuildVersion: "1.0.0",
+					BuildVersion: "1.1.0",
 					Ready:        true,
 				},
 			},
-			payload: HelloPayload{PlayerName: "nish", BuildVersion: "1.0.0", Ready: true},
+			payload: HelloPayload{PlayerName: "nish", BuildVersion: "1.1.0", Ready: true},
 		},
 		{
 			name: "ping",
