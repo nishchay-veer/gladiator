@@ -31,6 +31,15 @@ func NewLocalState() (State, error) {
 	}, nil
 }
 
+func (s *State) ResetMatch() error {
+	next, err := NewLocalState()
+	if err != nil {
+		return err
+	}
+	*s = next
+	return nil
+}
+
 func (s *State) Player(id PlayerID) *Player {
 	switch id {
 	case PlayerOne:

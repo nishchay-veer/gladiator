@@ -22,6 +22,7 @@ func TestActionForRune(t *testing.T) {
 		{name: "right", key: 'd', want: actionMoveRight},
 		{name: "fire", key: ' ', want: actionFire},
 		{name: "net debug", key: 'n', want: actionToggleNetDebug},
+		{name: "rematch", key: 'r', want: actionRematch},
 		{name: "quit", key: 'q', want: actionQuit},
 		{name: "none", key: '?', want: actionNone},
 	}
@@ -32,6 +33,70 @@ func TestActionForRune(t *testing.T) {
 				t.Fatalf("actionForRune(%q) = %v, want %v", tt.key, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRequestRematchResetsLocalHostState(t *testing.T) {
+	state, err := game.NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+	state.Tick = 20
+	state.Players[0].Score = 2
+
+	app := localApp{
+		cfg:     config.Default(),
+		state:   state,
+		player:  game.PlayerOne,
+		pending: game.NewInputCommand(state.Tick, game.PlayerOne),
+	}
+
+	app.requestRematch()
+	if app.state.Tick != 0 {
+		t.Fatalf("tick = %d, want 0", app.state.Tick)
+	}
+	if app.state.Players[0].Score != 0 {
+		t.Fatalf("p1 score = %d, want 0", app.state.Players[0].Score)
+	}
+	if app.pending.Tick != 0 {
+		t.Fatalf("pending tick = %d, want 0", app.pending.Tick)
+	}
+}
+
+func TestRequestRematchSendsHostSignal(t *testing.T) {
+	rematches := make(chan struct{}, 1)
+	app := localApp{
+		player:    game.PlayerOne,
+		rematches: rematches,
+	}
+
+	app.requestRematch()
+	select {
+	case <-rematches:
+	default:
+		t.Fatal("rematch signal not sent")
+	}
+}
+
+func TestRequestRematchIgnoredForJoiner(t *testing.T) {
+	rematches := make(chan struct{}, 1)
+	state, err := game.NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+	state.Players[0].Score = 2
+	app := localApp{
+		state:     state,
+		player:    game.PlayerTwo,
+		rematches: rematches,
+	}
+
+	app.requestRematch()
+	if app.state.Players[0].Score != 2 {
+		t.Fatalf("p1 score = %d, want unchanged 2", app.state.Players[0].Score)
+	}
+	if len(rematches) != 0 {
+		t.Fatal("joiner sent rematch signal")
 	}
 }
 
@@ -71,13 +136,31 @@ func TestPeerStatusText(t *testing.T) {
 func TestPeerStatusControlsPlayerTwoVisibility(t *testing.T) {
 	app := localApp{showPlayer2: false}
 
-	app.applyPeerStatus(netplay.PeerStatus{Connected: true})
+	app.applyPeerStatus(netplay.PeerStatus{Connected: true, PlayerName: "Nish"})
 	if !app.showPlayer2 {
 		t.Fatal("show player two = false, want true after connect")
+	}
+	if app.playerNames[1] != "Nish" {
+		t.Fatalf("player two name = %q, want Nish", app.playerNames[1])
 	}
 
 	app.applyPeerStatus(netplay.PeerStatus{Reason: "disconnect"})
 	if app.showPlayer2 {
 		t.Fatal("show player two = true, want false after disconnect")
+	}
+	if app.playerNames[1] != "P2" {
+		t.Fatalf("player two name = %q, want P2 after disconnect", app.playerNames[1])
+	}
+}
+
+func TestPlayerNameOrDefault(t *testing.T) {
+	if got := playerNameOrDefault("  Nish  ", "P1"); got != "Nish" {
+		t.Fatalf("playerNameOrDefault() = %q, want Nish", got)
+	}
+	if got := playerNameOrDefault("", "P2"); got != "P2" {
+		t.Fatalf("playerNameOrDefault(empty) = %q, want P2", got)
+	}
+	if got := playerNameOrDefault("VeryLongPlayerName", "P1"); got != "VeryLongPlay" {
+		t.Fatalf("playerNameOrDefault(long) = %q, want VeryLongPlay", got)
 	}
 }

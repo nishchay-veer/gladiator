@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nishchay-veer/gladiator/internal/netplay"
 )
 
 func TestRunHelp(t *testing.T) {
@@ -35,6 +37,76 @@ func TestRunVersion(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+}
+
+func TestRunDiscoverFindsExplicitLoopbackHost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	host, err := netplay.ListenHost(netplay.HostOptions{
+		Addr:      "127.0.0.1:0",
+		SessionID: 777,
+	})
+	if err != nil {
+		cancel()
+		t.Fatalf("ListenHost() error = %v", err)
+	}
+
+	errc := make(chan error, 1)
+	go func() {
+		errc <- host.Serve(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		_ = host.Close()
+		select {
+		case err := <-errc:
+			if err != nil {
+				t.Fatalf("host Serve() error = %v", err)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("host did not stop")
+		}
+	})
+
+	var stdout, stderr bytes.Buffer
+	code := RunContext(context.Background(), []string{"discover", host.Addr().String()}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("RunContext(discover) code = %d, stderr = %q", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), host.Addr().String()) {
+		t.Fatalf("stdout = %q, want host address %q", stdout.String(), host.Addr().String())
+	}
+	if !strings.Contains(stdout.String(), "map=local-arena-01") {
+		t.Fatalf("stdout = %q, want map id", stdout.String())
+	}
+}
+
+func TestPromptPlayerName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		fallback string
+		want     string
+	}{
+		{name: "entered", input: "Nish\n", fallback: "P1", want: "Nish"},
+		{name: "default", input: "\n", fallback: "P2", want: "P2"},
+		{name: "trim and cap", input: "  VeryLongPlayerName  \n", fallback: "P1", want: "VeryLongPlay"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var stdout bytes.Buffer
+			got, err := promptPlayerName(strings.NewReader(tt.input), &stdout, tt.fallback)
+			if err != nil {
+				t.Fatalf("promptPlayerName() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("promptPlayerName() = %q, want %q", got, tt.want)
+			}
+			if !strings.Contains(stdout.String(), "Player name") {
+				t.Fatalf("prompt output = %q, want prompt", stdout.String())
+			}
+		})
 	}
 }
 

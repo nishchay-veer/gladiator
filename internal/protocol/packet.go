@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	Version       uint8 = 1
+	Version       uint8 = 2
 	MaxPacketSize       = 1200
 
 	maxStringBytes      = 256
@@ -53,11 +53,12 @@ type HelloPayload struct {
 }
 
 type WelcomePayload struct {
-	PlayerID game.PlayerID
-	MapID    string
-	MapHash  uint64
-	Ready    bool
-	Snapshot game.Snapshot
+	PlayerID       game.PlayerID
+	HostPlayerName string
+	MapID          string
+	MapHash        uint64
+	Ready          bool
+	Snapshot       game.Snapshot
 }
 
 type InputPayload struct {
@@ -221,6 +222,7 @@ func writePayload(writer *packetWriter, packet Packet) {
 		writer.bool(payload.Ready)
 	case WelcomePayload:
 		writer.playerID(payload.PlayerID)
+		writer.string(payload.HostPlayerName)
 		writer.string(payload.MapID)
 		writer.u64(payload.MapHash)
 		writer.bool(payload.Ready)
@@ -246,11 +248,12 @@ func readPayload(reader *packetReader, packet Packet) (Payload, error) {
 		}, nil
 	case PacketWelcome:
 		return WelcomePayload{
-			PlayerID: reader.playerID(),
-			MapID:    reader.string(),
-			MapHash:  reader.u64(),
-			Ready:    reader.bool(),
-			Snapshot: reader.snapshot(),
+			PlayerID:       reader.playerID(),
+			HostPlayerName: reader.string(),
+			MapID:          reader.string(),
+			MapHash:        reader.u64(),
+			Ready:          reader.bool(),
+			Snapshot:       reader.snapshot(),
 		}, nil
 	case PacketInput:
 		return InputPayload{Command: reader.command()}, nil

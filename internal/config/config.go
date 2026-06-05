@@ -3,7 +3,6 @@ package config
 import "time"
 
 type Config struct {
-	PlayerName       string
 	NetworkPort      int
 	SimulationRate   time.Duration
 	SnapshotRate     time.Duration
@@ -24,7 +23,6 @@ type Controls struct {
 
 func Default() Config {
 	return Config{
-		PlayerName:       "P1",
 		NetworkPort:      42424,
 		SimulationRate:   time.Second / 60,
 		SnapshotRate:     time.Second / 30,

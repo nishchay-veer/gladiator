@@ -2,6 +2,7 @@ package termui
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -18,6 +19,7 @@ type PlayLocalOptions struct {
 type PlayHostOptions struct {
 	Config         config.Config
 	Addr           string
+	PlayerName     string
 	LinkSimulation netplay.LinkSimulation
 }
 
@@ -59,6 +61,7 @@ func PlayLocal(ctx context.Context, opts PlayLocalOptions) error {
 		state:       state,
 		events:      make(chan tcell.Event, 32),
 		player:      game.PlayerOne,
+		playerNames: [2]string{"P1", "P2"},
 		pending:     game.NewInputCommand(state.Tick, game.PlayerOne),
 		showPlayer2: true,
 	}
@@ -73,7 +76,11 @@ func PlayHost(ctx context.Context, opts PlayHostOptions) error {
 		cfg = config.Default()
 	}
 
-	host, err := netplay.ListenHost(netplay.HostOptions{Addr: opts.Addr})
+	hostPlayerName := playerNameOrDefault(opts.PlayerName, "P1")
+	host, err := netplay.ListenHost(netplay.HostOptions{
+		Addr:       opts.Addr,
+		PlayerName: hostPlayerName,
+	})
 	if err != nil {
 		return err
 	}
@@ -112,8 +119,10 @@ func PlayHost(ctx context.Context, opts PlayHostOptions) error {
 		state:       state,
 		events:      make(chan tcell.Event, 32),
 		player:      game.PlayerOne,
+		playerNames: [2]string{hostPlayerName, "P2"},
 		status:      peerStatusText(netplay.PeerStatus{}),
 		pending:     game.NewInputCommand(state.Tick, game.PlayerOne),
+		rematches:   session.Rematches,
 		showPlayer2: false,
 	}
 
@@ -176,11 +185,15 @@ func PlayJoin(ctx context.Context, opts PlayJoinOptions) error {
 	})
 
 	app := localApp{
-		screen:      screen,
-		cfg:         cfg,
-		state:       state,
-		events:      make(chan tcell.Event, 32),
-		player:      welcome.PlayerID,
+		screen: screen,
+		cfg:    cfg,
+		state:  state,
+		events: make(chan tcell.Event, 32),
+		player: welcome.PlayerID,
+		playerNames: [2]string{
+			playerNameOrDefault(welcome.HostPlayerName, "P1"),
+			playerNameOrDefault(opts.PlayerName, "P2"),
+		},
 		status:      "LAN P2",
 		pending:     game.NewInputCommand(state.Tick, welcome.PlayerID),
 		prediction:  game.NewPredictionHistory(0),
@@ -202,13 +215,17 @@ type localApp struct {
 	state        game.State
 	events       chan tcell.Event
 	player       game.PlayerID
+	playerNames  [2]string
 	status       string
 	pending      game.InputCommand
+	rematches    chan<- struct{}
 	showPlayer2  bool
 	showNetDebug bool
 	netDebug     netDebugStats
 	prediction   *game.PredictionHistory
 	correction   correctionAnimation
+	lastAuthTick uint64
+	hasAuthTick  bool
 
 	fpsWindow time.Time
 	frames    int
@@ -331,12 +348,28 @@ func (a *localApp) updateNetDebug(source netDebugSource) {
 
 func (a *localApp) applyPeerStatus(status netplay.PeerStatus) {
 	a.status = peerStatusText(status)
+	if status.Connected {
+		a.playerNames[1] = playerNameOrDefault(status.PlayerName, "P2")
+	} else {
+		a.playerNames[1] = "P2"
+	}
 	a.showPlayer2 = status.Connected
 }
 
 func (a *localApp) applyAuthoritativeSnapshot(snapshot game.Snapshot) {
+	rematchReset := a.hasAuthTick && snapshot.Tick < a.lastAuthTick
+	a.lastAuthTick = snapshot.Tick
+	a.hasAuthTick = true
+
 	if a.prediction == nil {
 		a.state = applySnapshot(a.state, snapshot)
+		return
+	}
+
+	if rematchReset {
+		a.prediction.Reset()
+		a.state = applySnapshot(a.state, snapshot)
+		a.correction = correctionAnimation{}
 		return
 	}
 
@@ -370,4 +403,17 @@ func peerStatusText(status netplay.PeerStatus) string {
 		return "P2 LOST"
 	}
 	return "P2 WAIT"
+}
+
+func playerNameOrDefault(name, fallback string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = fallback
+	}
+	const maxRunes = 12
+	runes := []rune(name)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return string(runes)
 }

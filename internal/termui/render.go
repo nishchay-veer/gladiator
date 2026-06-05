@@ -27,7 +27,9 @@ func (a *localApp) draw() {
 	}
 	originY := 1
 
-	a.drawArena(originX, originY)
+	styles := arenaStyles()
+	a.drawArena(originX, originY, styles)
+	a.drawPlayerNames(originX, originY, styles)
 	a.drawHUD(originX, originY+a.state.Arena.Height)
 	a.screen.Show()
 }
@@ -45,9 +47,7 @@ func (a *localApp) drawTooSmall(width, height int) {
 	}
 }
 
-func (a *localApp) drawArena(originX, originY int) {
-	styles := arenaStyles()
-
+func (a *localApp) drawArena(originX, originY int, styles renderStyles) {
 	for y := 0; y < a.state.Arena.Height; y++ {
 		for x := 0; x < a.state.Arena.Width; x++ {
 			p := game.Point{X: x, Y: y}
@@ -66,6 +66,52 @@ func (a *localApp) drawArena(originX, originY int) {
 			drawFloor(a.screen, cellX, cellY, x, y, styles)
 		}
 	}
+}
+
+func (a *localApp) drawPlayerNames(originX, originY int, styles renderStyles) {
+	a.drawPlayerName(a.state.Players[0], a.playerNames[0], originX, originY, styles.name1)
+	if a.showPlayer2 {
+		a.drawPlayerName(a.state.Players[1], a.playerNames[1], originX, originY, styles.name2)
+	}
+}
+
+func (a *localApp) drawPlayerName(player game.Player, name string, originX, originY int, style tcell.Style) {
+	if !player.Alive() {
+		return
+	}
+
+	label := playerNameOrDefault(name, playerNameFallback(player.ID))
+	labelWidth := runeCount(label)
+	if labelWidth == 0 {
+		return
+	}
+
+	x := originX + player.Position.X*2 - labelWidth/2
+	minX := originX
+	maxX := originX + a.state.Arena.Width*2 - labelWidth
+	if x < minX {
+		x = minX
+	}
+	if x > maxX {
+		x = maxX
+	}
+
+	y := originY + player.Position.Y - 1
+	if y < originY {
+		y = originY
+	}
+	drawTextClipped(a.screen, x, y, style, label, labelWidth)
+}
+
+func playerNameFallback(id game.PlayerID) string {
+	if id == game.PlayerTwo {
+		return "P2"
+	}
+	return "P1"
+}
+
+func runeCount(text string) int {
+	return len([]rune(text))
 }
 
 func (a *localApp) drawPlayerAt(p game.Point, x, y int, styles renderStyles) bool {
@@ -126,7 +172,7 @@ func (a *localApp) drawHUD(x, y int) {
 	}
 
 	drawText(a.screen, x, y, styles.primary, line)
-	drawText(a.screen, x, y+1, styles.help, " WASD/Arrows move   Space/Enter shoot   q/Esc quits ")
+	drawText(a.screen, x, y+1, styles.help, " WASD/Arrows move   Space/Enter shoot   r rematch   q/Esc quits ")
 	if a.showNetDebug {
 		if line := netDebugLine(a.netDebug); line != "" {
 			drawTextClipped(a.screen, x, y+2, styles.debug, line, a.state.Arena.Width*2)

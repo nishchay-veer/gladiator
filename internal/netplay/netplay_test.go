@@ -28,6 +28,9 @@ func TestLoopbackJoinAndInputSnapshot(t *testing.T) {
 	if welcome.PlayerID != game.PlayerTwo {
 		t.Fatalf("player id = %d, want %d", welcome.PlayerID, game.PlayerTwo)
 	}
+	if welcome.HostPlayerName != "P1" {
+		t.Fatalf("host player name = %q, want P1", welcome.HostPlayerName)
+	}
 	if welcome.MapID != "local-arena-01" {
 		t.Fatalf("map id = %q, want local-arena-01", welcome.MapID)
 	}
@@ -39,6 +42,9 @@ func TestLoopbackJoinAndInputSnapshot(t *testing.T) {
 	}
 	if welcome.Snapshot.Tick != 0 {
 		t.Fatalf("welcome tick = %d, want 0", welcome.Snapshot.Tick)
+	}
+	if got := host.RemotePlayerName(); got != "joiner" {
+		t.Fatalf("remote player name = %q, want joiner", got)
 	}
 
 	command := game.NewInputCommand(welcome.Snapshot.Tick, welcome.PlayerID)
@@ -280,6 +286,43 @@ func TestClientRequiresJoinBeforeInput(t *testing.T) {
 	}
 }
 
+func TestDiscoverFindsLoopbackHost(t *testing.T) {
+	host := startLoopbackHost(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	hosts, err := Discover(ctx, DiscoveryOptions{TargetAddr: host.Addr().String()})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if len(hosts) != 1 {
+		t.Fatalf("discovered hosts = %d, want 1: %#v", len(hosts), hosts)
+	}
+	if hosts[0].Addr != host.Addr().String() {
+		t.Fatalf("host addr = %q, want %q", hosts[0].Addr, host.Addr().String())
+	}
+	if hosts[0].MapID != "local-arena-01" {
+		t.Fatalf("map id = %q, want local-arena-01", hosts[0].MapID)
+	}
+	if hosts[0].MapHash == 0 {
+		t.Fatal("map hash = 0, want non-zero")
+	}
+}
+
+func TestDiscoverReturnsEmptyWhenNoHostResponds(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+
+	hosts, err := Discover(ctx, DiscoveryOptions{TargetAddr: "127.0.0.1:1"})
+	if err != nil {
+		t.Fatalf("Discover() error = %v", err)
+	}
+	if len(hosts) != 0 {
+		t.Fatalf("discovered hosts = %#v, want none", hosts)
+	}
+}
+
 func TestContinuousHostSessionAppliesLocalInput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -312,6 +355,39 @@ func TestContinuousHostSessionAppliesLocalInput(t *testing.T) {
 	}
 }
 
+func TestContinuousHostSessionAppliesRematch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	host, err := ListenHost(HostOptions{
+		Addr:      "127.0.0.1:0",
+		SessionID: 9006,
+	})
+	if err != nil {
+		t.Fatalf("ListenHost() error = %v", err)
+	}
+	defer host.Close()
+
+	host.mu.Lock()
+	host.state.Tick = 50
+	host.state.Players[0].Score = 4
+	host.mu.Unlock()
+
+	session := host.StartSession(ctx, fastSessionOptions())
+	select {
+	case session.Rematches <- struct{}{}:
+	case <-time.After(time.Second):
+		t.Fatal("timed out sending rematch")
+	}
+
+	reset := waitForSnapshot(t, session.Snapshots, func(snapshot game.Snapshot) bool {
+		return snapshot.Players[0].Score == 0 && snapshot.Players[1].Score == 0
+	}, session.Errors)
+	if reset.Match.ElapsedTicks != 0 {
+		t.Fatalf("elapsed ticks = %d, want 0", reset.Match.ElapsedTicks)
+	}
+}
+
 func TestContinuousClientSessionStreamsSnapshotsAndRemoteInput(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -335,6 +411,9 @@ func TestContinuousClientSessionStreamsSnapshotsAndRemoteInput(t *testing.T) {
 	}
 	if clientSession.Join.PlayerID != game.PlayerTwo {
 		t.Fatalf("player id = %d, want %d", clientSession.Join.PlayerID, game.PlayerTwo)
+	}
+	if clientSession.Join.HostPlayerName != "P1" {
+		t.Fatalf("host player name = %q, want P1", clientSession.Join.HostPlayerName)
 	}
 	if !clientSession.Join.Ready {
 		t.Fatal("join ready = false, want true")
@@ -397,7 +476,10 @@ func TestContinuousSessionSimulatesLossAndJitter(t *testing.T) {
 		t.Fatalf("StartSession() error = %v", err)
 	}
 
-	waitForPeerStatus(t, hostSession.PeerStatus, true, hostSession.Errors, clientSession.Errors)
+	status := waitForPeerStatus(t, hostSession.PeerStatus, true, hostSession.Errors, clientSession.Errors)
+	if status.PlayerName != "joiner" {
+		t.Fatalf("peer status player name = %q, want joiner", status.PlayerName)
+	}
 
 	for i := 0; i < 3; i++ {
 		command := game.NewInputCommand(0, clientSession.Join.PlayerID)

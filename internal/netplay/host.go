@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,18 +13,21 @@ import (
 )
 
 type HostOptions struct {
-	Addr      string
-	SessionID uint64
+	Addr       string
+	SessionID  uint64
+	PlayerName string
 }
 
 type Host struct {
-	conn      *net.UDPConn
-	sessionID uint64
+	conn       *net.UDPConn
+	sessionID  uint64
+	playerName string
 
-	mu       sync.Mutex
-	state    game.State
-	remote   *net.UDPAddr
-	sequence uint32
+	mu               sync.Mutex
+	state            game.State
+	remote           *net.UDPAddr
+	remotePlayerName string
+	sequence         uint32
 
 	remotePackets  packetWindow
 	remoteLastSeen time.Time
@@ -54,11 +58,13 @@ func ListenHost(opts HostOptions) (*Host, error) {
 	if sessionID == 0 {
 		sessionID = uint64(time.Now().UnixNano())
 	}
+	playerName := normalizedPlayerName(opts.PlayerName, "P1")
 
 	return &Host{
-		conn:      conn,
-		sessionID: sessionID,
-		state:     state,
+		conn:       conn,
+		sessionID:  sessionID,
+		playerName: playerName,
+		state:      state,
 	}, nil
 }
 
@@ -75,6 +81,10 @@ func (h *Host) Serve(ctx context.Context) error {
 				return nil
 			}
 			return err
+		}
+
+		if h.handleDiscoveryDatagram(addr, data) {
+			continue
 		}
 
 		packet, err := protocol.Decode(data)
@@ -107,6 +117,13 @@ func (h *Host) RemoteConnected() bool {
 	defer h.mu.Unlock()
 
 	return h.remote != nil
+}
+
+func (h *Host) RemotePlayerName() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.remotePlayerName
 }
 
 func (h *Host) Stats() NetworkStats {
@@ -149,6 +166,7 @@ func (h *Host) handleHello(addr *net.UDPAddr, packet protocol.Packet) error {
 		h.remotePackets = packetWindow{}
 	}
 	h.remote = cloneUDPAddr(addr)
+	h.remotePlayerName = normalizedPlayerName(payload.PlayerName, "P2")
 	h.remoteLastSeen = time.Now()
 	h.remotePackets.Observe(packet.Sequence)
 	ack, ackBits := h.remotePackets.Ack()
@@ -162,11 +180,12 @@ func (h *Host) handleHello(addr *net.UDPAddr, packet protocol.Packet) error {
 		AckBits:   ackBits,
 		Tick:      snapshot.Tick,
 		Payload: protocol.WelcomePayload{
-			PlayerID: game.PlayerTwo,
-			MapID:    snapshot.Match.MapID,
-			MapHash:  mapHash,
-			Ready:    true,
-			Snapshot: snapshot,
+			PlayerID:       game.PlayerTwo,
+			HostPlayerName: h.playerName,
+			MapID:          snapshot.Match.MapID,
+			MapHash:        mapHash,
+			Ready:          true,
+			Snapshot:       snapshot,
 		},
 	}
 	h.mu.Unlock()
@@ -235,6 +254,7 @@ func (h *Host) handleDisconnect(addr *net.UDPAddr, packet protocol.Packet) {
 
 	if packet.SessionID == h.sessionID && sameUDPAddr(h.remote, addr) {
 		h.remote = nil
+		h.remotePlayerName = ""
 		h.remotePackets = packetWindow{}
 		h.remoteLastSeen = time.Time{}
 	}
@@ -252,6 +272,7 @@ func (h *Host) disconnectTimedOutRemote(now time.Time, timeout time.Duration) bo
 	}
 
 	h.remote = nil
+	h.remotePlayerName = ""
 	h.remotePackets = packetWindow{}
 	h.remoteLastSeen = time.Time{}
 	return true
@@ -260,4 +281,17 @@ func (h *Host) disconnectTimedOutRemote(now time.Time, timeout time.Duration) bo
 func (h *Host) nextSequenceLocked() uint32 {
 	h.sequence++
 	return h.sequence
+}
+
+func normalizedPlayerName(name, fallback string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = fallback
+	}
+	const maxRunes = 12
+	runes := []rune(name)
+	if len(runes) > maxRunes {
+		runes = runes[:maxRunes]
+	}
+	return string(runes)
 }

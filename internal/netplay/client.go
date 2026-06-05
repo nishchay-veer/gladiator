@@ -33,12 +33,13 @@ type Client struct {
 }
 
 type JoinResult struct {
-	SessionID uint64
-	PlayerID  game.PlayerID
-	MapID     string
-	MapHash   uint64
-	Ready     bool
-	Snapshot  game.Snapshot
+	SessionID      uint64
+	PlayerID       game.PlayerID
+	HostPlayerName string
+	MapID          string
+	MapHash        uint64
+	Ready          bool
+	Snapshot       game.Snapshot
 }
 
 func DialClient(opts ClientOptions) (*Client, error) {
@@ -120,12 +121,13 @@ func (c *Client) Join(ctx context.Context) (JoinResult, error) {
 		c.mu.Unlock()
 
 		return JoinResult{
-			SessionID: response.SessionID,
-			PlayerID:  payload.PlayerID,
-			MapID:     payload.MapID,
-			MapHash:   payload.MapHash,
-			Ready:     payload.Ready,
-			Snapshot:  payload.Snapshot,
+			SessionID:      response.SessionID,
+			PlayerID:       payload.PlayerID,
+			HostPlayerName: payload.HostPlayerName,
+			MapID:          payload.MapID,
+			MapHash:        payload.MapHash,
+			Ready:          payload.Ready,
+			Snapshot:       payload.Snapshot,
 		}, nil
 	}
 }

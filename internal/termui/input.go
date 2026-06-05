@@ -18,6 +18,7 @@ const (
 	actionMoveRight
 	actionFire
 	actionToggleNetDebug
+	actionRematch
 	actionResize
 )
 
@@ -39,6 +40,8 @@ func (a *localApp) handleEvent(event tcell.Event) bool {
 		a.pending.Buttons |= game.ButtonFire
 	case actionToggleNetDebug:
 		a.showNetDebug = !a.showNetDebug
+	case actionRematch:
+		a.requestRematch()
 	}
 
 	return false
@@ -116,6 +119,8 @@ func actionForRune(r rune, controls config.Controls) inputAction {
 	switch {
 	case r == 'n' || r == 'N':
 		return actionToggleNetDebug
+	case r == 'r' || r == 'R':
+		return actionRematch
 	case runeIn(r, controls.Quit):
 		return actionQuit
 	case runeIn(r, controls.Up):
@@ -131,6 +136,25 @@ func actionForRune(r rune, controls config.Controls) inputAction {
 	default:
 		return actionNone
 	}
+}
+
+func (a *localApp) requestRematch() {
+	if a.player != game.PlayerOne {
+		return
+	}
+	if a.rematches != nil {
+		select {
+		case a.rematches <- struct{}{}:
+		default:
+		}
+		return
+	}
+
+	if err := a.state.ResetMatch(); err != nil {
+		return
+	}
+	a.pending = game.NewInputCommand(a.state.Tick, a.player)
+	a.correction = correctionAnimation{}
 }
 
 func runeIn(target rune, runes []rune) bool {

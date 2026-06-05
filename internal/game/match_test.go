@@ -55,6 +55,39 @@ func TestLocalMatchKeepsRunningAfterFiveScores(t *testing.T) {
 	}
 }
 
+func TestResetMatchRestoresInitialState(t *testing.T) {
+	state, err := NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+
+	state.Tick = 99
+	state.Players[0].Score = 3
+	state.Players[0].Health = 1
+	state.Bullets = append(state.Bullets, Bullet{
+		Position:  Point{X: 2, Y: 2},
+		Direction: Right,
+		Owner:     PlayerOne,
+		TTL:       10,
+	})
+
+	if err := state.ResetMatch(); err != nil {
+		t.Fatalf("ResetMatch() error = %v", err)
+	}
+	if state.Tick != 0 {
+		t.Fatalf("tick = %d, want 0", state.Tick)
+	}
+	if state.Players[0].Score != 0 || state.Players[1].Score != 0 {
+		t.Fatalf("scores = %d/%d, want 0/0", state.Players[0].Score, state.Players[1].Score)
+	}
+	if state.Players[0].Health != state.Players[0].MaxHealth {
+		t.Fatalf("p1 health = %d, want max %d", state.Players[0].Health, state.Players[0].MaxHealth)
+	}
+	if len(state.Bullets) != 0 {
+		t.Fatalf("bullets = %d, want 0", len(state.Bullets))
+	}
+}
+
 func TestMatchEndsAtTimeLimit(t *testing.T) {
 	state, err := NewLocalState()
 	if err != nil {

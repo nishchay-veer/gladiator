@@ -69,11 +69,12 @@ func TestWelcomePacketRoundTrip(t *testing.T) {
 		Sequence:  1,
 		Tick:      snapshot.Tick,
 		Payload: WelcomePayload{
-			PlayerID: game.PlayerTwo,
-			MapID:    snapshot.Match.MapID,
-			MapHash:  12345,
-			Ready:    true,
-			Snapshot: snapshot,
+			PlayerID:       game.PlayerTwo,
+			HostPlayerName: "hosty",
+			MapID:          snapshot.Match.MapID,
+			MapHash:        12345,
+			Ready:          true,
+			Snapshot:       snapshot,
 		},
 	}
 
@@ -84,6 +85,9 @@ func TestWelcomePacketRoundTrip(t *testing.T) {
 	}
 	if payload.PlayerID != game.PlayerTwo {
 		t.Fatalf("player id = %d, want %d", payload.PlayerID, game.PlayerTwo)
+	}
+	if payload.HostPlayerName != "hosty" {
+		t.Fatalf("host player name = %q, want hosty", payload.HostPlayerName)
 	}
 	if payload.MapID != snapshot.Match.MapID {
 		t.Fatalf("map id = %q, want %q", payload.MapID, snapshot.Match.MapID)

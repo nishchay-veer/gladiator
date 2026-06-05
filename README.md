@@ -6,7 +6,9 @@ The current build supports:
 
 - Local terminal play with `play-local`
 - Host-authoritative UDP LAN play with `host`
+- LAN host discovery with `discover`
 - Joiner terminal play with `join <ip|host[:port]>`
+- Player-name prompt for host and join
 - Deterministic game-core tests for commands, snapshots, replay, and netplay
 
 ## Requirements
@@ -65,6 +67,12 @@ Host:
 go run ./cmd/gladiator host
 ```
 
+Discover hosts on the LAN:
+
+```sh
+go run ./cmd/gladiator discover
+```
+
 Join:
 
 ```sh
@@ -72,6 +80,17 @@ go run ./cmd/gladiator join <host-ip>
 ```
 
 The default LAN port is `42424`. See `docs/lan-test-checklist.md` for the manual two-machine test flow.
+
+In local or host play, P1 can press `r` to reset the duel for a rematch. Joiners receive the reset from the host.
+
+## Player Names
+
+Host and join ask for a player name before the terminal arena opens. The names are shown above the moving player positions during play.
+
+```sh
+gladiator host
+gladiator join <host-ip>
+```
 
 Network test knobs:
 

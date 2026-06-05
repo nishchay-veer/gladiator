@@ -9,6 +9,8 @@ type renderStyles struct {
 	wallEdge tcell.Style
 	player1  tcell.Style
 	player2  tcell.Style
+	name1    tcell.Style
+	name2    tcell.Style
 	bullet   tcell.Style
 }
 
@@ -26,6 +28,8 @@ func arenaStyles() renderStyles {
 		wallEdge: tcell.StyleDefault.Foreground(tcell.NewRGBColor(38, 70, 111)).Background(tcell.NewRGBColor(15, 30, 54)),
 		player1:  tcell.StyleDefault.Foreground(tcell.NewRGBColor(100, 255, 112)).Background(tcell.NewRGBColor(12, 48, 24)).Bold(true),
 		player2:  tcell.StyleDefault.Foreground(tcell.NewRGBColor(255, 82, 82)).Background(tcell.NewRGBColor(54, 12, 22)).Bold(true),
+		name1:    tcell.StyleDefault.Foreground(tcell.NewRGBColor(148, 255, 156)).Background(tcell.NewRGBColor(3, 7, 12)).Bold(true),
+		name2:    tcell.StyleDefault.Foreground(tcell.NewRGBColor(255, 148, 148)).Background(tcell.NewRGBColor(3, 7, 12)).Bold(true),
 		bullet:   tcell.StyleDefault.Foreground(tcell.NewRGBColor(83, 230, 255)).Background(tcell.NewRGBColor(9, 13, 22)).Bold(true),
 	}
 }

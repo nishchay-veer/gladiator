@@ -268,3 +268,33 @@
 
 - Documented the first-run macOS Gatekeeper warning for unsigned GitHub release binaries.
 - Added the quarantine-removal workaround for trusted official downloads and kept Developer ID signing/notarization as future release polish.
+
+### Player Name Prompt UX
+
+- Chose prompt-based player names instead of a user-facing config file.
+- Removed the config file command/docs path from the release UX.
+- Host and join now ask for a player name before opening the terminal arena.
+- Player names travel through the LAN handshake and render above the moving player positions.
+
+### CI Hardening
+
+- Added a normal `ci` GitHub Actions workflow for pushes to `main` and pull requests.
+- CI now runs unit tests, race tests, and a cross-platform snapshot build separately from the tag-only release workflow.
+
+### LAN Discovery Start
+
+- Added a lightweight UDP discovery request/response path on the existing game port.
+- Host sessions now answer discovery probes while continuing to handle normal hello/input/ping/disconnect packets.
+- Added `gladiator discover [addr:port]` so users can find a host before manually joining, with manual IP as the fallback when broadcast is blocked.
+
+### Rematch UX
+
+- Added a host-authoritative rematch reset.
+- P1 can press `r` during local or host play to reset scores, health, bullets, positions, and match time.
+- Joiners receive the host reset as an authoritative snapshot, and joiner-side prediction history is cleared when the authoritative tick moves backward.
+
+### Phase 6 Closure
+
+- Closed the UX, packaging, and release milestone for the current terminal LAN scope.
+- The project now has GitHub release packaging, cross-platform builds, macOS first-run notes, prompt-based player names, CI/race/snapshot checks, LAN discovery with manual IP fallback, graceful quit/disconnect handling, and host-authoritative rematch.
+- Remaining release polish such as Apple Developer ID signing/notarization, richer lobby screens, and package-manager installs can move into later expansion work without blocking this milestone.

@@ -29,12 +29,14 @@ type SessionOptions struct {
 }
 
 type PeerStatus struct {
-	Connected bool
-	Reason    string
+	Connected  bool
+	Reason     string
+	PlayerName string
 }
 
 type HostSession struct {
 	Inputs       chan<- game.InputCommand
+	Rematches    chan<- struct{}
 	Snapshots    <-chan game.Snapshot
 	PeerStatus   <-chan PeerStatus
 	Errors       <-chan error
@@ -55,6 +57,7 @@ func (h *Host) StartSession(ctx context.Context, opts SessionOptions) HostSessio
 	opts = normalizeSessionOptions(opts)
 
 	localInputs := make(chan game.InputCommand, opts.InputBuffer)
+	rematches := make(chan struct{}, opts.InputBuffer)
 	remoteInputs := make(chan game.InputCommand, opts.InputBuffer)
 	snapshots := make(chan game.Snapshot, opts.SnapshotBuffer)
 	peerStatus := make(chan PeerStatus, opts.SnapshotBuffer)
@@ -62,11 +65,12 @@ func (h *Host) StartSession(ctx context.Context, opts SessionOptions) HostSessio
 	sender := newPacketSender(h.conn, opts.LinkSimulation)
 
 	go h.runSessionPackets(ctx, remoteInputs, peerStatus, errors)
-	go h.runSessionTicks(ctx, opts, sender, localInputs, remoteInputs, snapshots, errors)
+	go h.runSessionTicks(ctx, opts, sender, localInputs, rematches, remoteInputs, snapshots, errors)
 	go h.runSessionTimeouts(ctx, opts, peerStatus)
 
 	return HostSession{
 		Inputs:       localInputs,
+		Rematches:    rematches,
 		Snapshots:    snapshots,
 		PeerStatus:   peerStatus,
 		Errors:       errors,
@@ -148,6 +152,10 @@ func (h *Host) runSessionPackets(ctx context.Context, remoteInputs chan game.Inp
 			return
 		}
 
+		if h.handleDiscoveryDatagram(addr, data) {
+			continue
+		}
+
 		packet, err := protocol.Decode(data)
 		if err != nil {
 			continue
@@ -161,7 +169,11 @@ func (h *Host) runSessionPackets(ctx context.Context, remoteInputs chan game.Inp
 				return
 			}
 			if !wasConnected && h.RemoteConnected() {
-				offerPeerStatus(peerStatus, PeerStatus{Connected: true, Reason: "hello"})
+				offerPeerStatus(peerStatus, PeerStatus{
+					Connected:  true,
+					Reason:     "hello",
+					PlayerName: h.RemotePlayerName(),
+				})
 			}
 		case protocol.PacketInput:
 			h.queueRemoteInput(addr, packet, remoteInputs)
@@ -177,7 +189,7 @@ func (h *Host) runSessionPackets(ctx context.Context, remoteInputs chan game.Inp
 	}
 }
 
-func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, sender *packetSender, localInputs <-chan game.InputCommand, remoteInputs <-chan game.InputCommand, snapshots chan game.Snapshot, errors chan<- error) {
+func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, sender *packetSender, localInputs <-chan game.InputCommand, rematches <-chan struct{}, remoteInputs <-chan game.InputCommand, snapshots chan game.Snapshot, errors chan<- error) {
 	simulationTicker := time.NewTicker(opts.SimulationRate)
 	defer simulationTicker.Stop()
 
@@ -190,6 +202,13 @@ func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, sender 
 		select {
 		case <-ctx.Done():
 			return
+		case _, ok := <-rematches:
+			if !ok {
+				rematches = nil
+				continue
+			}
+			h.resetMatch()
+			h.publishCurrentSnapshot(ctx, sender, snapshots, errors)
 		case <-simulationTicker.C:
 			local := drainCommand(localInputs, game.NewInputCommand(0, game.PlayerOne))
 			remote := drainCommand(remoteInputs, game.NewInputCommand(0, game.PlayerTwo))
@@ -206,6 +225,13 @@ func (h *Host) runSessionTicks(ctx context.Context, opts SessionOptions, sender 
 			h.publishCurrentSnapshot(ctx, sender, snapshots, errors)
 		}
 	}
+}
+
+func (h *Host) resetMatch() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	_ = h.state.ResetMatch()
 }
 
 func (h *Host) runSessionTimeouts(ctx context.Context, opts SessionOptions, peerStatus chan PeerStatus) {

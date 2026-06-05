@@ -74,6 +74,46 @@ func TestApplyAuthoritativeSnapshotReplaysPredictedCommands(t *testing.T) {
 	}
 }
 
+func TestApplyAuthoritativeSnapshotResetsPredictionOnRematchTick(t *testing.T) {
+	state, err := game.NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+
+	app := localApp{
+		cfg:        config.Default(),
+		state:      state,
+		player:     game.PlayerTwo,
+		prediction: game.NewPredictionHistory(8),
+	}
+
+	later := state.Snapshot()
+	later.Tick = 20
+	app.applyAuthoritativeSnapshot(later)
+
+	command := game.NewInputCommand(app.state.Tick, game.PlayerTwo)
+	command.MoveX = -1
+	command.Aim = game.Left
+	command.HasAim = true
+	app.applyPredictedCommand(command)
+	if app.prediction.Len() == 0 {
+		t.Fatal("prediction history len = 0, want recorded command before reset")
+	}
+
+	reset, err := game.NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+	app.applyAuthoritativeSnapshot(reset.Snapshot())
+
+	if app.state.Tick != 0 {
+		t.Fatalf("state tick = %d, want reset tick 0", app.state.Tick)
+	}
+	if app.prediction.Len() != 0 {
+		t.Fatalf("prediction history len = %d, want 0 after reset", app.prediction.Len())
+	}
+}
+
 func TestApplyAuthoritativeSnapshotStartsCorrectionAnimation(t *testing.T) {
 	state, err := game.NewLocalState()
 	if err != nil {
