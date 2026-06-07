@@ -298,3 +298,9 @@
 - Closed the UX, packaging, and release milestone for the current terminal LAN scope.
 - The project now has GitHub release packaging, cross-platform builds, macOS first-run notes, prompt-based player names, CI/race/snapshot checks, LAN discovery with manual IP fallback, graceful quit/disconnect handling, and host-authoritative rematch.
 - Remaining release polish such as Apple Developer ID signing/notarization, richer lobby screens, and package-manager installs can move into later expansion work without blocking this milestone.
+
+### Local Bot Difficulty Tuning
+
+- Made the local P2 bot easier without adding randomness.
+- The bot still aims when it has line of sight, but now waits for a slower firing cadence instead of shooting immediately.
+- Slowed bot chase movement slightly so local practice gives P1 more breathing room.

@@ -30,7 +30,9 @@ const (
 	bulletDamage        = 1
 	bulletMoveEvery     = 2
 	bulletTimeToLive    = 90
-	botMoveEveryTicks   = 12
+	botMoveEveryTicks   = 18
+	botFireEveryTicks   = 45
+	botFireWindupTicks  = 15
 	openEndedTimeLimit  = 0
 	openEndedScoreLimit = 0
 	defaultArenaWidth   = 40

@@ -2,12 +2,31 @@ package game
 
 import "testing"
 
-func TestBotFiresAtVisibleTarget(t *testing.T) {
+func TestBotAimsAtVisibleTargetBeforeFiring(t *testing.T) {
 	state, err := NewLocalState()
 	if err != nil {
 		t.Fatalf("NewLocalState() error = %v", err)
 	}
 
+	state.Players[0].Position = Point{X: 5, Y: 5}
+	state.Players[1].Position = Point{X: 8, Y: 5}
+	stepWithCommand(&state, state.BotCommand(PlayerTwo, PlayerOne, state.Tick))
+
+	if state.Players[1].Facing != Left {
+		t.Fatalf("bot facing = %v, want Left", state.Players[1].Facing)
+	}
+	if len(state.Bullets) != 0 {
+		t.Fatalf("len(Bullets) = %d, want 0 during windup", len(state.Bullets))
+	}
+}
+
+func TestBotFiresAtVisibleTargetOnCadence(t *testing.T) {
+	state, err := NewLocalState()
+	if err != nil {
+		t.Fatalf("NewLocalState() error = %v", err)
+	}
+
+	state.Tick = botFireWindupTicks
 	state.Players[0].Position = Point{X: 5, Y: 5}
 	state.Players[1].Position = Point{X: 8, Y: 5}
 	stepWithCommand(&state, state.BotCommand(PlayerTwo, PlayerOne, state.Tick))
@@ -32,6 +51,7 @@ func TestBotCanKillPlayerOne(t *testing.T) {
 	state.Players[0].Position = Point{X: 5, Y: 5}
 	state.Players[0].Health = 1
 	state.Players[1].Position = Point{X: 6, Y: 5}
+	state.Tick = botFireWindupTicks
 
 	stepWithCommand(&state, state.BotCommand(PlayerTwo, PlayerOne, state.Tick))
 

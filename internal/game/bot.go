@@ -11,7 +11,9 @@ func (s *State) BotCommand(botID, targetID PlayerID, tick uint64) InputCommand {
 	if direction, ok := s.Arena.ClearLine(bot.Position, target.Position); ok {
 		command.Aim = direction
 		command.HasAim = true
-		command.Buttons |= ButtonFire
+		if botShouldFire(*bot, tick) {
+			command.Buttons |= ButtonFire
+		}
 		return command
 	}
 
@@ -31,6 +33,10 @@ func (s *State) BotCommand(botID, targetID PlayerID, tick uint64) InputCommand {
 	}
 
 	return command
+}
+
+func botShouldFire(bot Player, tick uint64) bool {
+	return bot.CanFire() && tick%botFireEveryTicks == botFireWindupTicks
 }
 
 func chaseMoves(from, to Point) []Point {
